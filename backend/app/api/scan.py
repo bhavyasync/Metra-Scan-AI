@@ -34,21 +34,18 @@ async def scan_product(
     file: UploadFile = File(...)
 ):
 
-    allowed_types = [
-        "image/jpeg",
-        "image/jpg",
-        "image/png",
-        "image/webp",
-    ]
+    content_type = (file.content_type or "").lower()
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    is_image = (
+        content_type.startswith("image/")
+        or content_type in ["application/octet-stream", "binary/octet-stream"]
+        or ext in [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".jfif"]
+    )
 
-    if file.content_type not in allowed_types:
-
+    if not is_image:
         raise HTTPException(
             status_code=400,
-            detail=(
-                "Only JPG, JPEG, PNG "
-                "and WEBP images are allowed."
-            )
+            detail="Only JPG, JPEG, PNG and WEBP packaging images are allowed."
         )
 
 

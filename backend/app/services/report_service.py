@@ -109,7 +109,8 @@ def generate_pdf_report(
     image_path: str,
     report_data: dict,
 ) -> str:
-    output_dir = Path(r"D:\HACKATHON\metrascan-ai\temp\reports")
+    base_dir = Path(__file__).resolve().parents[2]
+    output_dir = base_dir / "temp" / "reports"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -332,14 +333,35 @@ def generate_pdf_report(
     # --------------------------------------------------------
     # EMBEDDED PRODUCT PACKAGING IMAGE
     # --------------------------------------------------------
+    thumb_path = None
     if image_path and os.path.exists(image_path):
         try:
-            image = Image(image_path, width=70 * mm, height=65 * mm, kind="proportional")
+            import cv2
+            img = cv2.imread(image_path)
+            if img is not None:
+                h, w = img.shape[:2]
+                max_dim = 600
+                if max(h, w) > max_dim:
+                    scale = max_dim / max(h, w)
+                    img = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+                thumb_path = str(output_dir / f"thumb_{timestamp}.jpg")
+                cv2.imwrite(thumb_path, img, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+                image_to_embed = thumb_path
+            else:
+                image_to_embed = image_path
+
+            image = Image(image_to_embed, width=70 * mm, height=65 * mm, kind="proportional")
             image.hAlign = "CENTER"
             story.append(image)
             story.append(Spacer(1, 6))
         except Exception:
-            pass
+            try:
+                image = Image(image_path, width=70 * mm, height=65 * mm, kind="proportional")
+                image.hAlign = "CENTER"
+                story.append(image)
+                story.append(Spacer(1, 6))
+            except Exception:
+                pass
 
     # --------------------------------------------------------
     # MANDATORY DECLARATIONS CHECKLIST (RULE 6 & 9)
@@ -480,5 +502,11 @@ def generate_pdf_report(
         onFirstPage=draw_page,
         onLaterPages=draw_page,
     )
+
+    if thumb_path and os.path.exists(thumb_path):
+        try:
+            os.remove(thumb_path)
+        except Exception:
+            pass
 
     return str(output_path)

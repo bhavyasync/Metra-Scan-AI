@@ -32,7 +32,9 @@ if tesseract_path:
 
 try:
     from rapidocr_onnxruntime import RapidOCR
-    rapid_engine = RapidOCR()
+    rapid_engine = RapidOCR(use_cls=False, text_score=0.25)
+    if hasattr(rapid_engine, "text_det"):
+        rapid_engine.text_det.limit_side_len = 1440
 except Exception as e:
     print(f"RapidOCR initialization notice: {e}")
     rapid_engine = None
@@ -44,19 +46,18 @@ except Exception as e:
 
 def prepare_packaging_image(image: np.ndarray) -> np.ndarray:
     """
-    Applies high-accuracy packaging contrast enhancement:
-    - Fast smart scaling (optimal for DBNet detector: ~1280px max)
-    - Contrast optimization
+    Applies high-precision packaging scaling for micro-text:
+    - Optimal for DBNet detector: ~1440px max (sharp recognition of faint dot-matrix dates & care info)
+    - Interpolation via INTER_AREA when downscaling, INTER_CUBIC when upscaling
     """
     h, w = image.shape[:2]
     longest = max(h, w)
 
-    # Scale to optimal OCR dimensions (800px - 1280px for sub-second speed + maximum clarity)
-    if longest > 1280:
-        scale = 1280 / longest
+    if longest > 1440:
+        scale = 1440 / longest
         image = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
-    elif longest < 800:
-        scale = 800 / longest
+    elif longest < 1200:
+        scale = 1200 / longest
         image = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
 
     return image
@@ -97,7 +98,7 @@ def run_rapidocr_pass(image: np.ndarray) -> List[Dict[str, Any]]:
                 continue
 
             conf = round(float(score) * 100, 1) if float(score) <= 1.0 else round(float(score), 1)
-            if conf < 30:
+            if conf < 20:
                 continue
 
             xs = [pt[0] for pt in box]
@@ -237,25 +238,41 @@ def extract_text_with_data(image_path: str) -> Dict[str, Any]:
                 seen_texts.add(clean_lower)
                 all_lines.append(item)
 
+        PACKAGING_KEYWORDS = [
+            "MRP", "NET", "WEIGHT", "WT", "PKD", "MFD", "MFG",
+            "BEST BEFORE", "USE BY", "USEBY", "LTD", "CONSUMER",
+            "PVT", "EXP", "DATE", "FSSAI", "RS.", "RATE", "PRICE", "CARE", "BATCH"
+        ]
+
         # PASS 1: RapidOCR on 0° (Native view)
         rapid_0 = run_rapidocr_pass(img_enhanced)
-        for l in rapid_0:
-            add_line(l)
+        txt_0 = " ".join(l["text"] for l in rapid_0).upper()
+        has_rich_0 = (len(rapid_0) >= 8 and any(k in txt_0 for k in PACKAGING_KEYWORDS)) or (len(rapid_0) >= 12)
 
-        # Check if Pass 1 yielded sufficient packaging text
-        sample_text = " ".join(l["text"] for l in all_lines).upper()
-        has_rich_packaging = len(all_lines) >= 8 or any(
-            k in sample_text for k in [
-                "MRP", "NET", "WEIGHT", "WT", "PKD", "MFD",
-                "BEST BEFORE", "USE BY", "LTD", "CONSUMER", "PVT", "EXP", "DATE"
-            ]
-        )
+        if has_rich_0 and len(rapid_0) >= 5:
+            for l in rapid_0:
+                add_line(l)
+        else:
+            # Sweep remaining angles [270, 90, 180] adaptively for rotated mobile packaging photos
+            best_lines = rapid_0
+            best_score = len(rapid_0) + sum(3 for k in PACKAGING_KEYWORDS if k in txt_0)
 
-        # PASS 2 (Adaptive): If text is sparse (e.g. package held sideways), sweep 90°
-        if not has_rich_packaging and len(all_lines) < 8:
-            rot_90 = rotate_image(img_enhanced, 90)
-            rapid_90 = run_rapidocr_pass(rot_90)
-            for l in rapid_90:
+            for angle in [270, 90, 180]:
+                rot = rotate_image(img_enhanced, angle)
+                rapid_rot = run_rapidocr_pass(rot)
+                txt_rot = " ".join(l["text"] for l in rapid_rot).upper()
+                score = len(rapid_rot) + sum(3 for k in PACKAGING_KEYWORDS if k in txt_rot)
+
+                if score > best_score:
+                    best_score = score
+                    best_lines = rapid_rot
+
+                # Fast exit if rich packaging declarations are found
+                if len(rapid_rot) >= 6 and any(k in txt_rot for k in ["MRP", "NET", "PKD", "MFD", "USE BY", "USEBY", "CARE", "LTD"]):
+                    best_lines = rapid_rot
+                    break
+
+            for l in best_lines:
                 add_line(l)
 
         # If no lines were detected (e.g., blank or non-text picture)

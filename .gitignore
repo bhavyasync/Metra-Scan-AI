@@ -54,3 +54,30 @@ backend/uploads/
 
 frontend/.next/
 frontend/node_modules/
+
+# Python
+__pycache__/
+*.pyc
+
+# Python virtual environments
+venv/
+env/
+.venv/
+
+# Environment variables
+.env
+
+# Node modules
+node_modules/
+
+# Next.js
+.next/
+
+# IDE
+.vscode/
+
+# OS files
+.DS_Store
+
+# Large files
+*.zip

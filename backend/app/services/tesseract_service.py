@@ -4,18 +4,23 @@ import pytesseract
 from PIL import Image
 
 
-TESSERACT_PATH = Path(
-    r"D:\ocr\tesseract.exe"
-)
+import shutil
+import os
 
-if not TESSERACT_PATH.exists():
-    raise FileNotFoundError(
-        f"Tesseract not found: {TESSERACT_PATH}"
-    )
+tess_bin = shutil.which("tesseract")
+if not tess_bin:
+    for candidate in [
+        r"D:\ocr\tesseract.exe",
+        r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+        "/usr/bin/tesseract",
+        "/usr/local/bin/tesseract",
+    ]:
+        if os.path.exists(candidate):
+            tess_bin = candidate
+            break
 
-pytesseract.pytesseract.tesseract_cmd = str(
-    TESSERACT_PATH
-)
+if tess_bin:
+    pytesseract.pytesseract.tesseract_cmd = str(tess_bin)
 
 
 def extract(

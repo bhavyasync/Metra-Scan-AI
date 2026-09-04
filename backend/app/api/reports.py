@@ -1,4 +1,4 @@
-from fastapi import APIRouter, File, Form, UploadFile, HTTPException
+
 from fastapi.responses import FileResponse
 import json
 import os
@@ -7,6 +7,7 @@ from pathlib import Path
 
 from app.services.report_service import generate_pdf_report
 
+from fastapi import APIRouter, File, Form, UploadFile, HTTPException
 router = APIRouter(
     prefix="/reports",
     tags=["Reports"],
@@ -41,12 +42,9 @@ async def generate_report(
         # Preserve extension
         extension = Path(file.filename).suffix.lower() or ".jpg"
 
-        # Temporary input image stored strictly on D: drive
-        temp_dir = Path(r"D:\HACKATHON\metrascan-ai\temp")
-        temp_dir.mkdir(parents=True, exist_ok=True)
+        # Temporary input image
         with tempfile.NamedTemporaryFile(
             delete=False,
-            dir=str(temp_dir),
             suffix=extension,
         ) as temp_file:
             temp_path = temp_file.name
