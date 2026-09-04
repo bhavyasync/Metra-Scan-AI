@@ -1,0 +1,53 @@
+{
+  "version": "1.0",
+  "rules": [
+    {
+      "id": "LM001",
+      "name": "Manufacturer or Packer Declaration",
+      "field": "manufacturer",
+      "required": true,
+      "severity": "HIGH",
+      "points": 15
+    },
+    {
+      "id": "LM002",
+      "name": "Manufacturer Address",
+      "field": "address",
+      "required": true,
+      "severity": "HIGH",
+      "points": 10
+    },
+    {
+      "id": "LM003",
+      "name": "Net Quantity",
+      "field": "net_quantity",
+      "required": true,
+      "severity": "HIGH",
+      "points": 15
+    },
+    {
+      "id": "LM004",
+      "name": "MRP Declaration",
+      "field": "mrp",
+      "required": true,
+      "severity": "CRITICAL",
+      "points": 20
+    },
+    {
+      "id": "LM005",
+      "name": "Manufacture or Packing Date",
+      "field": "packed_date",
+      "required": true,
+      "severity": "MEDIUM",
+      "points": 10
+    },
+    {
+      "id": "LM006",
+      "name": "Consumer Care Details",
+      "field": "consumer_care",
+      "required": true,
+      "severity": "MEDIUM",
+      "points": 10
+    }
+  ]
+}
