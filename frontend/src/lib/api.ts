@@ -1,4 +1,4 @@
-const API_URL = "https://metra-scan-ai-backend.onrender.com/";
+const API_URL = "https://metra-scan-ai-backend.onrender.com";
 
 
 export async function scanProduct(
