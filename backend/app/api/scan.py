@@ -20,9 +20,10 @@ from app.services.compliance_engine import (
 
 router = APIRouter()
 
+BASE_DIR = Path(__file__).resolve().parents[2]
 
-UPLOAD_DIR = Path(r"D:\HACKATHON\metrascan-ai\backend\uploads")
-PROCESSED_DIR = Path(r"D:\HACKATHON\metrascan-ai\backend\processed")
+UPLOAD_DIR = BASE_DIR / "uploads"
+PROCESSED_DIR = BASE_DIR / "processed"
 
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 PROCESSED_DIR.mkdir(parents=True, exist_ok=True)

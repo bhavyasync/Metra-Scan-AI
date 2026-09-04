@@ -18,9 +18,13 @@ from typing import Dict, List, Any, Optional
 # TESSERACT CONFIGURATION
 # ============================================================
 
-TESSERACT_PATH = Path(r"D:\ocr\tesseract.exe")
-if TESSERACT_PATH.exists():
-    pytesseract.pytesseract.tesseract_cmd = str(TESSERACT_PATH)
+import shutil
+
+tesseract_path = shutil.which("tesseract")
+
+if tesseract_path:
+    pytesseract.pytesseract.tesseract_cmd = tesseract_path
+
 
 # ============================================================
 # RAPIDOCR INITIALIZATION (ONNX Runtime, Local D: drive)

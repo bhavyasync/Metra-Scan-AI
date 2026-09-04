@@ -1,19 +1,56 @@
-# Virtual environments
+# =========================
+# Python Virtual Environments
+# =========================
 venv/
 backend/venv/
 .venv/
 
-# Python cache
+# =========================
+# Python Cache
+# =========================
 __pycache__/
 *.pyc
+*.pyo
 
-# Environment variables
+# =========================
+# Environment Variables
+# =========================
 .env
+.env.local
 
+# =========================
+# Temporary / AI Model Cache
+# =========================
+temp/
+cache/
+backend/temp/
+backend/cache/
+
+# =========================
+# Backend uploads
+# =========================
+backend/uploads/
+
+# =========================
+# Node.js
+# =========================
+node_modules/
+frontend/node_modules/
+
+# Next.js
+frontend/.next/
+.next/
+
+# =========================
 # IDE
+# =========================
 .vscode/
 .idea/
 
-# Node modules
-node_modules/
+backend/temp/
+backend/cache/
+backend/processed/
 backend/uploads/
+
+frontend/.next/
+frontend/node_modules/
