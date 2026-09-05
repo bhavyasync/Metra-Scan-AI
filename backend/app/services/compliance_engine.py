@@ -34,16 +34,15 @@ def evaluate_compliance(
     declarations: Dict[str, Any],
     ocr_confidence: float = 0.0,
 ) -> Dict[str, Any]:
-    score = 100
     violations: List[Dict[str, str]] = []
     checks: List[Dict[str, Any]] = []
 
     # -------------------------------------------------------------
-    # 1. MRP Check (Rule 6(1)(e))
+    # 1. MRP Check (Rule 6(1)(e)) - MANDATORY
     # -------------------------------------------------------------
     mrp = declarations.get("mrp", {})
     mrp_val = mrp.get("value")
-    mrp_detected = mrp.get("status") in ["DETECTED", "NEEDS_REVIEW"] or mrp_val is not None
+    mrp_detected = (mrp.get("status") in ["DETECTED", "NEEDS_REVIEW"] or mrp_val is not None) and mrp_val is not None
 
     if mrp_detected and mrp_val is not None:
         checks.append({
@@ -57,28 +56,27 @@ def evaluate_compliance(
         violations.append(
             create_violation(
                 field="mrp",
-                title="MRP Not Detected (Rule 6(1)(e))",
+                title="MRP Missing (Rule 6(1)(e))",
                 severity="critical",
-                message="Maximum Retail Price was not detected on the packaging.",
+                message="Maximum Retail Price (inclusive of all taxes) was not detected on the packaging.",
                 recommendation="Ensure the panel containing the MRP inclusive of all taxes declaration is captured.",
             )
         )
         checks.append({
             "field": "MRP",
-            "status": "not_verified",
+            "status": "non_compliant",
             "value": None,
             "rule": "Rule 6(1)(e)",
-            "score_impact": -15,
+            "score_impact": -30,
         })
-        score -= 15
 
     # -------------------------------------------------------------
-    # 2. Net Quantity Check (Rule 6(1)(c))
+    # 2. Net Quantity Check (Rule 6(1)(c)) - MANDATORY
     # -------------------------------------------------------------
     quantity = declarations.get("net_quantity", {})
     qty_val = quantity.get("value")
     qty_unit = quantity.get("unit", "")
-    qty_detected = quantity.get("status") in ["DETECTED", "NEEDS_REVIEW"] or qty_val is not None
+    qty_detected = (quantity.get("status") in ["DETECTED", "NEEDS_REVIEW"] or qty_val is not None) and qty_val is not None
 
     if qty_detected and qty_val is not None:
         checks.append({
@@ -92,7 +90,7 @@ def evaluate_compliance(
         violations.append(
             create_violation(
                 field="net_quantity",
-                title="Net Quantity Not Detected (Rule 6(1)(c))",
+                title="Net Quantity Missing (Rule 6(1)(c))",
                 severity="critical",
                 message="Net quantity / weight declaration could not be verified from the packaging image.",
                 recommendation="Capture the principal display panel containing Net Qty or Net Weight.",
@@ -100,19 +98,18 @@ def evaluate_compliance(
         )
         checks.append({
             "field": "Net Quantity",
-            "status": "not_verified",
+            "status": "non_compliant",
             "value": None,
             "rule": "Rule 6(1)(c)",
-            "score_impact": -15,
+            "score_impact": -30,
         })
-        score -= 15
 
     # -------------------------------------------------------------
     # 3. Country of Origin Check (Rule 6(1)(n))
     # -------------------------------------------------------------
     origin = declarations.get("country_of_origin", {})
     origin_val = origin.get("value") or origin.get("country")
-    origin_detected = origin.get("status") in ["DETECTED", "NEEDS_REVIEW"] or origin_val is not None
+    origin_detected = (origin.get("status") in ["DETECTED", "NEEDS_REVIEW"] or origin_val is not None) and origin_val is not None
 
     if origin_detected and origin_val is not None:
         checks.append({
@@ -139,7 +136,6 @@ def evaluate_compliance(
             "rule": "Rule 6(1)(n)",
             "score_impact": -10,
         })
-        score -= 10
 
     # -------------------------------------------------------------
     # 4. Font Size as Per Rule (Rule 9 & Schedule II)
@@ -182,10 +178,9 @@ def evaluate_compliance(
             "rule": "Rule 9 & Schedule II",
             "score_impact": -10,
         })
-        score -= 10
 
     # -------------------------------------------------------------
-    # 5. Manufacturer / Packer Details Check (Rule 6(1)(a))
+    # 5. Manufacturer / Packer Details Check (Rule 6(1)(a)) - MANDATORY
     # -------------------------------------------------------------
     company_details = declarations.get("company_details", {})
     mfg_obj = company_details.get("manufacturer", {})
@@ -197,8 +192,9 @@ def evaluate_compliance(
     importer_val = importer_obj.get("value") if isinstance(importer_obj, dict) else importer_obj
 
     company_val = mfg_val or packer_val or importer_val
+    company_detected = bool(company_val)
 
-    if company_val:
+    if company_detected:
         checks.append({
             "field": "Manufacturer / Packer",
             "status": "detected",
@@ -210,23 +206,22 @@ def evaluate_compliance(
         violations.append(
             create_violation(
                 field="manufacturer",
-                title="Manufacturer Details Not Detected (Rule 6(1)(a))",
-                severity="warning",
+                title="Manufactured By Details Missing (Rule 6(1)(a))",
+                severity="critical",
                 message="Manufacturer, packer or importer name & address were not detected.",
                 recommendation="Scan the back or side panel displaying the complete manufacturer name and address.",
             )
         )
         checks.append({
             "field": "Manufacturer / Packer",
-            "status": "not_verified",
+            "status": "non_compliant",
             "value": None,
             "rule": "Rule 6(1)(a)",
-            "score_impact": -10,
+            "score_impact": -30,
         })
-        score -= 10
 
     # -------------------------------------------------------------
-    # 6. Manufacturing Date (MFD / PKD) and Expiry / Use By Date (Rule 6(1)(d))
+    # 6. Manufacturing Date (MFD / PKD) and Expiry / Use By Date (Rule 6(1)(d)) - MANDATORY
     # -------------------------------------------------------------
     dates = declarations.get("dates", {})
     mfg_date_obj = dates.get("manufacturing_date", {})
@@ -242,8 +237,11 @@ def evaluate_compliance(
     mfg_or_pkg = mfg_date or pkg_date
     exp_or_bb = exp_date or bb_date
 
-    # 6a. Manufacturing / Packing Date
-    if mfg_or_pkg:
+    mfd_detected = bool(mfg_or_pkg)
+    expiry_detected = bool(exp_or_bb)
+
+    # 6a. Manufacturing / Packing Date (MFD) - MANDATORY
+    if mfd_detected:
         checks.append({
             "field": "Manufacturing / Packing Date (MFD/PKD)",
             "status": "detected",
@@ -252,16 +250,25 @@ def evaluate_compliance(
             "score_impact": 0,
         })
     else:
+        violations.append(
+            create_violation(
+                field="mfd_date",
+                title="Manufacturing Date (MFD/PKD) Missing (Rule 6(1)(d))",
+                severity="critical",
+                message="Mandatory Date of Manufacture or Packing (MFD/PKD) was not detected on the packaging.",
+                recommendation="Capture the panel or dot-matrix imprint displaying the MFD/PKD declaration.",
+            )
+        )
         checks.append({
             "field": "Manufacturing / Packing Date (MFD/PKD)",
-            "status": "not_verified",
+            "status": "non_compliant",
             "value": None,
             "rule": "Rule 6(1)(d)",
-            "score_impact": 0,
+            "score_impact": -30,
         })
 
-    # 6b. Use By / Expiry Date / Best Before
-    if exp_or_bb:
+    # 6b. Use By / Expiry Date / Best Before (Expiry) - MANDATORY
+    if expiry_detected:
         checks.append({
             "field": "Use By / Expiry Date",
             "status": "detected",
@@ -270,26 +277,22 @@ def evaluate_compliance(
             "score_impact": 0,
         })
     else:
-        checks.append({
-            "field": "Use By / Expiry Date",
-            "status": "not_verified",
-            "value": None,
-            "rule": "Rule 6(1)(d)",
-            "score_impact": 0,
-        })
-
-    # Statutory Rule 6(1)(d) penalty only if neither MFD/PKD nor Expiry/Best Before was declared
-    if not mfg_or_pkg and not exp_or_bb:
         violations.append(
             create_violation(
-                field="date",
-                title="Manufacturing or Expiry Date Not Detected (Rule 6(1)(d))",
-                severity="warning",
-                message="Neither a manufacturing/packing date nor a use-by/expiry date was detected.",
-                recommendation="Capture the date or Best Before stamp printed on the package.",
+                field="expiry_date",
+                title="Date of Expiry / Use By Missing (Rule 6(1)(d))",
+                severity="critical",
+                message="Mandatory Date of Expiry, Use By, or Best Before period declaration was not detected.",
+                recommendation="Capture the panel or stamp declaring the Expiry Date, Use By, or Best Before period.",
             )
         )
-        score -= 10
+        checks.append({
+            "field": "Use By / Expiry Date",
+            "status": "non_compliant",
+            "value": None,
+            "rule": "Rule 6(1)(d)",
+            "score_impact": -30,
+        })
 
     # -------------------------------------------------------------
     # 7. Consumer Care Check (Rule 6(1)(f))
@@ -327,7 +330,6 @@ def evaluate_compliance(
             "rule": "Rule 6(1)(f)",
             "score_impact": -5,
         })
-        score -= 5
 
     # -------------------------------------------------------------
     # 8. Check for Non-Packaging or Zero-Declaration Image
@@ -335,22 +337,25 @@ def evaluate_compliance(
     has_mrp = mrp_detected and mrp_val is not None
     has_qty = qty_detected and qty_val is not None
     has_origin = origin_detected and origin_val is not None
-    has_company = bool(company_val)
-    has_date = bool(mfg_or_pkg or exp_or_bb)
-    has_care = bool(care_parts)
+    has_company = company_detected
+    has_mfd = mfd_detected
+    has_expiry = expiry_detected
+    has_care = bool(care_parts or consumer_care.get("evidence"))
 
     packaging_declarations_count = sum([
         1 if has_mrp else 0,
         1 if has_qty else 0,
         1 if has_origin else 0,
         1 if has_company else 0,
-        1 if has_date else 0,
+        1 if has_mfd else 0,
+        1 if has_expiry else 0,
         1 if has_care else 0,
     ])
 
     # If completely zero packaging declarations were found (e.g. personal picture, selfie, landscape, random room)
     if packaging_declarations_count == 0:
         return {
+            "score": 0,
             "compliance_score": 0,
             "status": "NON_PACKAGING",
             "ocr_confidence": round(ocr_confidence, 1),
@@ -367,36 +372,120 @@ def evaluate_compliance(
             ],
             "violation_count": 1,
             "is_packaging": False,
+            "is_compliant": False,
+            "missing_mandatory_fields": [
+                "Manufacturing / Packing Date (MFD / PKD)",
+                "Date of Expiry / Use By",
+                "Manufactured By (Name & Address)",
+                "Maximum Retail Price (MRP)",
+                "Net Quantity / Weight",
+            ],
+            "missing_mandatory_count": 5,
         }
 
     # -------------------------------------------------------------
-    # OCR Reliability Adjustment
+    # Mandatory Core Declarations Tracking
+    # Required Fields:
+    # 1. MFD (Manufacturing / Packing Date)
+    # 2. Date of Expiry or Use By
+    # 3. Manufactured By (Manufacturer / Packer / Importer)
+    # 4. MRP (Maximum Retail Price)
+    # 5. Net Quantity (Net Weight / Net Volume)
     # -------------------------------------------------------------
+    missing_mandatory_declarations: List[str] = []
+    if not has_mfd:
+        missing_mandatory_declarations.append("Manufacturing / Packing Date (MFD / PKD)")
+    if not has_expiry:
+        missing_mandatory_declarations.append("Date of Expiry / Use By")
+    if not has_company:
+        missing_mandatory_declarations.append("Manufactured By (Name & Address)")
+    if not has_mrp:
+        missing_mandatory_declarations.append("Maximum Retail Price (MRP)")
+    if not has_qty:
+        missing_mandatory_declarations.append("Net Quantity / Weight")
+
+    missing_mandatory_count = len(missing_mandatory_declarations)
+
+    # Secondary penalties (font size, origin, consumer care, poor OCR)
+    secondary_penalties = 0
+    if not is_font_compliant and measured_h is not None:
+        secondary_penalties += 10
+    if not has_origin:
+        secondary_penalties += 10
+    if not has_care:
+        secondary_penalties += 5
     if ocr_confidence < 35:
-        score -= 10
+        secondary_penalties += 10
         image_quality = "poor"
     elif ocr_confidence < 60:
         image_quality = "moderate"
     else:
         image_quality = "good"
 
-    score = max(0, min(100, score))
-
-    if score >= 80:
-        overall_status = "COMPLIANT"
-    elif score >= 50:
-        overall_status = "NEEDS_REVIEW"
-    else:
+    # -------------------------------------------------------------
+    # Mandatory Fields Decision & Successive Deduction Rule:
+    # "if MFD , date of expiry or use by , manufactured by , mrp and net quantity 
+    #  if any of the 1 is missing then non compliant also score should not be 
+    #  above 70 and if more required fields are missing successive deduction 
+    #  in compliance score"
+    # -------------------------------------------------------------
+    if missing_mandatory_count > 0:
         overall_status = "NON_COMPLIANT"
+
+        # Successive score caps:
+        # 1 missing: score <= 70
+        # 2 missing: successive deduction of 20 points -> score <= 50
+        # 3 missing: successive deduction of 20 points -> score <= 30
+        # 4 missing: successive deduction of 15 points -> score <= 15
+        # 5 missing: score = 0
+        MANDATORY_SCORE_CAPS = {
+            1: 70,
+            2: 50,
+            3: 30,
+            4: 15,
+            5: 0,
+        }
+        max_allowed_score = MANDATORY_SCORE_CAPS.get(missing_mandatory_count, 0)
+        score = max(0, max_allowed_score - secondary_penalties)
+        score = min(score, max_allowed_score)
+
+        violations.insert(
+            0,
+            create_violation(
+                field="mandatory_declarations",
+                title=f"Statutory Non-Compliance: {missing_mandatory_count} Core Declaration(s) Missing",
+                severity="critical",
+                message=(
+                    f"Mandatory Legal Metrology declaration(s) missing: {', '.join(missing_mandatory_declarations)}. "
+                    f"Under Rule 6(1) of PCR 2011, pre-packaged commodities missing any of the 5 core declarations "
+                    f"(MFD, Expiry/Use By, Manufactured By, MRP, Net Quantity) are strictly Non-Compliant."
+                ),
+                recommendation="All 5 core statutory declarations must be present on packaged commodities for retail distribution.",
+            ),
+        )
+    else:
+        # All 5 mandatory fields are present
+        score = max(0, min(100, 100 - secondary_penalties))
+        if score >= 80:
+            overall_status = "COMPLIANT"
+        elif score >= 50:
+            overall_status = "NEEDS_REVIEW"
+        else:
+            overall_status = "NON_COMPLIANT"
+
+    score = max(0, min(100, score))
 
     return {
         "score": score,
         "compliance_score": score,
         "status": overall_status,
+        "missing_mandatory_fields": missing_mandatory_declarations,
+        "missing_mandatory_count": missing_mandatory_count,
         "ocr_confidence": round(ocr_confidence, 1),
         "image_quality": image_quality,
         "checks": checks,
         "violations": violations,
         "violation_count": len(violations),
         "is_packaging": True,
+        "is_compliant": (overall_status == "COMPLIANT"),
     }

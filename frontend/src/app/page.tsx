@@ -497,7 +497,9 @@ export default function Home() {
       !result?.declarations?.mrp?.value &&
       !result?.declarations?.net_quantity?.value &&
       !result?.declarations?.company_details?.manufacturer?.value);
-  const isCompliant = score >= 85 && !isNonPackaging;
+  const isCompliant =
+    result?.compliance?.status === "COMPLIANT" ||
+    (result?.compliance?.status !== "NON_COMPLIANT" && score >= 80 && !isNonPackaging);
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#06090e] text-slate-100">
@@ -847,6 +849,21 @@ export default function Home() {
                                 ? "Zero packaging declarations detected. Please upload a clear photograph of product packaging or principal display panel."
                                 : "Package violates mandatory declarations under Legal Metrology Rules, 2011."}
                             </p>
+
+                            {result?.compliance?.missing_mandatory_fields && result.compliance.missing_mandatory_fields.length > 0 && (
+                              <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-2.5 text-xs text-red-900">
+                                <span className="font-bold flex items-center gap-1">
+                                  <span>🚨</span>
+                                  <span>Statutory Core Declarations Missing ({result.compliance.missing_mandatory_count}):</span>
+                                </span>
+                                <p className="mt-1 text-[11px] font-medium text-red-800">
+                                  {result.compliance.missing_mandatory_fields.join(" • ")}
+                                </p>
+                                <p className="mt-1 text-[10px] text-red-600 font-normal">
+                                  *Rule 6(1) PCR 2011: Missing core declarations result in automatic Non-Compliance and successive score deduction.
+                                </p>
+                              </div>
+                            )}
                           </div>
 
                           <div className="flex items-center gap-3 sm:flex-col sm:items-end">
