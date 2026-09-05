@@ -13,6 +13,7 @@ export default function CompanyInbox({ onNavigateScanner }: CompanyInboxProps) {
   const { notices, respondToNotice } = useNoticesStore();
 
   const [activeNotice, setActiveNotice] = useState<ComplianceNotice | null>(null);
+  const [selectedBrandFilter, setSelectedBrandFilter] = useState<string>("ALL");
   const [responseText, setResponseText] = useState("");
   const [proofFilename, setProofFilename] = useState("");
   const [toastMessage, setToastMessage] = useState("");
@@ -22,16 +23,38 @@ export default function CompanyInbox({ onNavigateScanner }: CompanyInboxProps) {
     setTimeout(() => setToastMessage(""), 3500);
   };
 
-  // Filter notices for this company (or show all relevant for demo)
+  // Filter notices for this company or brand
   const companyNotices = notices.filter((n) => {
+    if (selectedBrandFilter !== "ALL") {
+      const matchBrand =
+        n.brand_name.toLowerCase().includes(selectedBrandFilter.toLowerCase()) ||
+        n.company_id.toLowerCase().includes(selectedBrandFilter.toLowerCase()) ||
+        n.product_name.toLowerCase().includes(selectedBrandFilter.toLowerCase());
+      return matchBrand;
+    }
+
     if (!user) return true;
     const uid = user.user_id.toLowerCase();
     const ent = (user.entityName || "").toLowerCase();
+
+    // If company user is logged in, show their company's notices, or all notices if general company account
+    if (uid.includes("parle")) {
+      return n.brand_name.toLowerCase().includes("parle") || n.company_id.includes("parle");
+    }
+    if (uid.includes("cadbury") || uid.includes("mondelez")) {
+      return n.brand_name.toLowerCase().includes("cadbury") || n.brand_name.toLowerCase().includes("mondelez") || n.company_id.includes("cadbury");
+    }
+    if (uid.includes("amul")) {
+      return n.brand_name.toLowerCase().includes("amul") || n.company_id.includes("amul");
+    }
+    if (uid.includes("britannia")) {
+      return n.brand_name.toLowerCase().includes("britannia") || n.company_id.includes("britannia");
+    }
+
     return (
       n.company_id.toLowerCase().includes(uid) ||
       ent.includes(n.brand_name.toLowerCase()) ||
-      uid.includes("amul") ||
-      uid.includes("comp")
+      true
     );
   });
 
@@ -39,8 +62,9 @@ export default function CompanyInbox({ onNavigateScanner }: CompanyInboxProps) {
     e.preventDefault();
     if (!activeNotice || !responseText.trim()) return;
 
-    respondToNotice(activeNotice.id, responseText.trim(), proofFilename || "Revised_Artwork_Cylinder_Rev4.pdf");
-    showToast("Statutory response and proof submitted to Legal Metrology Inspectorate!");
+    const proof = proofFilename.trim() || `Revised_Cylinder_${activeNotice.case_number}.pdf`;
+    respondToNotice(activeNotice.id, responseText.trim(), proof);
+    showToast(`✓ Statutory response submitted for Case ${activeNotice.case_number}! Inspector notified.`);
     setActiveNotice(null);
     setResponseText("");
     setProofFilename("");
@@ -101,6 +125,35 @@ export default function CompanyInbox({ onNavigateScanner }: CompanyInboxProps) {
         </div>
       </div>
 
+      {/* Brand / Company Filter Bar */}
+      <div className="flex flex-wrap items-center gap-2 pt-1 pb-1">
+        <span className="text-xs font-bold text-slate-500 mr-1">Filter Brand:</span>
+        {[
+          { id: "ALL", label: "All Complaints" },
+          { id: "parle", label: "Parle" },
+          { id: "amul", label: "Amul" },
+          { id: "mondelez", label: "Cadbury / Mondelez" },
+          { id: "britannia", label: "Britannia" },
+          { id: "royal", label: "Royal Spices" },
+        ].map((f) => {
+          const isActive = selectedBrandFilter === f.id;
+          return (
+            <button
+              key={f.id}
+              type="button"
+              onClick={() => setSelectedBrandFilter(f.id)}
+              className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${
+                isActive
+                  ? "bg-orange-600 text-white shadow-xs"
+                  : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-100"
+              }`}
+            >
+              {f.label}
+            </button>
+          );
+        })}
+      </div>
+
       {/* Notices List */}
       <div className="grid gap-4">
         {companyNotices.length === 0 ? (
@@ -108,7 +161,7 @@ export default function CompanyInbox({ onNavigateScanner }: CompanyInboxProps) {
             <span className="text-4xl">🎉</span>
             <p className="mt-3 text-sm font-bold text-emerald-800">No active violations on file!</p>
             <p className="mt-1 text-xs text-slate-500">
-              All scanned products for your brand are currently compliant with Legal Metrology regulations.
+              All scanned products for this brand filter are currently compliant with Legal Metrology regulations.
             </p>
           </div>
         ) : (
@@ -193,26 +246,61 @@ export default function CompanyInbox({ onNavigateScanner }: CompanyInboxProps) {
                       </span>
                       {notice.ocr_evidence_snippet}
                     </div>
+
+                    {/* Company Response Preview if already submitted */}
+                    {notice.company_response && (
+                      <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50/80 p-3 text-xs">
+                        <div className="flex items-center justify-between text-emerald-900 font-bold">
+                          <span>✓ Your Submitted Corrective Action:</span>
+                          <span className="text-[10px] font-normal text-slate-500">
+                            {new Date(notice.company_response.responded_at).toLocaleString("en-IN")}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-slate-800 italic leading-relaxed">
+                          "{notice.company_response.response_text}"
+                        </p>
+                        {notice.company_response.proof_submitted && (
+                          <p className="mt-1.5 font-mono text-[10px] text-emerald-700">
+                            Attached Proof: {notice.company_response.proof_submitted}
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Right Column: Notice Status & Actions */}
                   <div className="flex flex-col items-start sm:items-end gap-3 shrink-0">
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-center sm:text-right min-w-[150px]">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-center sm:text-right min-w-[160px]">
                       <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
                         Notice Status
                       </p>
                       <p className="mt-0.5 text-sm font-black text-slate-800">
-                        {notice.status === "COMPANY_RESPONDED" ? "Response Submitted" : "Action Required"}
+                        {notice.status === "RESOLVED"
+                          ? "Resolved & Approved"
+                          : notice.status === "COMPANY_RESPONDED"
+                          ? "Response Under Review"
+                          : notice.status === "ESCALATED_URGENT"
+                          ? "Escalated Urgent"
+                          : "Action Required"}
                       </p>
                     </div>
 
-                    {notice.status === "COMPANY_RESPONDED" ? (
-                      <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-center sm:text-right">
+                    {notice.status === "RESOLVED" ? (
+                      <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-3.5 py-2 text-center sm:text-right">
                         <span className="text-xs font-bold text-emerald-800 block">
-                          ✓ Response Under Review
+                          ✓ Case Resolved & Approved
                         </span>
-                        <span className="text-[10px] text-slate-500">
-                          Submitted on {new Date(notice.company_response?.responded_at || "").toLocaleDateString("en-IN")}
+                        <span className="text-[10px] text-emerald-700">
+                          Enforcement officer signed off
+                        </span>
+                      </div>
+                    ) : notice.status === "COMPANY_RESPONDED" ? (
+                      <div className="rounded-xl border border-blue-200 bg-blue-50 px-3.5 py-2 text-center sm:text-right">
+                        <span className="text-xs font-bold text-blue-800 block">
+                          ✓ Response Submitted
+                        </span>
+                        <span className="text-[10px] text-blue-600">
+                          Awaiting Inspector Sign-off
                         </span>
                       </div>
                     ) : (

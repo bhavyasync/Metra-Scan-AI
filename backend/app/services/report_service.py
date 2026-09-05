@@ -94,7 +94,9 @@ def draw_page(canvas, doc):
     canvas.saveState()
     canvas.setFont("Helvetica", 7.5)
     canvas.setFillColor(colors.HexColor("#64748B"))
-    footer = "Logic Legends • MetraScan AI • Legal Metrology (Packaged Commodities) Rules, 2011 Inspection Directorate"
+    dl_info = getattr(doc, "download_time", "")
+    dl_suffix = f" • Real-time Download: {dl_info}" if dl_info else ""
+    footer = f"Logic Legends • MetraScan AI • Legal Metrology Inspection Directorate{dl_suffix}"
     canvas.drawCentredString(width / 2, 8 * mm, footer)
     canvas.restoreState()
 
@@ -113,6 +115,15 @@ def generate_pdf_report(
     output_dir = base_dir / "temp" / "reports"
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    from datetime import timezone, timedelta
+    IST = timezone(timedelta(hours=5, minutes=30))
+    # Prefer exact real-time download timestamp from client, fallback to current IST time
+    realtime_download = (
+        report_data.get("download_time")
+        or report_data.get("review", {}).get("reviewed_at")
+        or datetime.now(IST).strftime("%d %b %Y, %I:%M:%S %p IST")
+    )
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_path = output_dir / f"MetraScan_Report_{timestamp}.pdf"
 
@@ -126,6 +137,7 @@ def generate_pdf_report(
         title="MetraScan AI Compliance Report",
         author="Logic Legends",
     )
+    doc.download_time = realtime_download
 
     styles = getSampleStyleSheet()
 
@@ -219,12 +231,12 @@ def generate_pdf_report(
     header_table = Table(
         [
             [
-                Paragraph(f"<b>DOCKET ID:</b> {scan_id}", normal_style),
-                Paragraph(f"<b>DATE:</b> {datetime.now().strftime('%d %b %Y, %I:%M %p')}", normal_style),
-                Paragraph(f"<b>SCAN MODE:</b> {report_data.get('scan_mode', 'Package Scan')}", normal_style),
+                Paragraph(f"<b>DOCKET ID:</b><br/>{scan_id}", normal_style),
+                Paragraph(f"<b>REAL-TIME DOWNLOAD:</b><br/>{realtime_download}", normal_style),
+                Paragraph(f"<b>SCAN MODE:</b><br/>{report_data.get('scan_mode', 'Package Scan')}", normal_style),
             ]
         ],
-        colWidths=[65 * mm, 65 * mm, 52 * mm],
+        colWidths=[52 * mm, 82 * mm, 48 * mm],
         style=TableStyle([
             ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F1F5F9")),
             ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
@@ -311,6 +323,10 @@ def generate_pdf_report(
         [
             Paragraph("<b>Officer Remarks:</b>", normal_style),
             Paragraph(f"<i>\"{inspector_remarks}\"</i>", normal_style),
+        ],
+        [
+            Paragraph("<b>Official Download Timestamp:</b>", normal_style),
+            Paragraph(f"<b>{realtime_download}</b> (Live System Generation)", normal_style),
         ],
     ]
 
@@ -472,9 +488,10 @@ def generate_pdf_report(
         [
             [
                 Paragraph(
-                    "<b>Directorate Verification & Audit Seal:</b><br/>"
-                    "This report was compiled utilizing Logic Legends MetraScan AI deep learning & rule verification pipeline. "
-                    "All findings are recorded in compliance with the Legal Metrology (Packaged Commodities) Rules, 2011.",
+                    f"<b>Directorate Verification & Audit Seal:</b><br/>"
+                    f"This report was compiled utilizing Logic Legends MetraScan AI deep learning & rule verification pipeline. "
+                    f"All findings are recorded in compliance with the Legal Metrology (Packaged Commodities) Rules, 2011.<br/>"
+                    f"<b>Official Download Timestamp:</b> {realtime_download}",
                     small_style,
                 ),
                 Paragraph(

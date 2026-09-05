@@ -390,6 +390,7 @@ def evaluate_compliance(
         overall_status = "NON_COMPLIANT"
 
     return {
+        "score": score,
         "compliance_score": score,
         "status": overall_status,
         "ocr_confidence": round(ocr_confidence, 1),

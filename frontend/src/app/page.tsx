@@ -313,8 +313,43 @@ export default function Home() {
 
     const comp = result.compliance || {};
     const violations = comp.violations || ["Mandatory declaration non-compliance"];
-    const score = comp.compliance_score ?? 50;
-    const prodName = comp.sampleName || selectedFile?.name || "Scanned Packaged Commodity";
+    const score = comp.compliance_score ?? comp.score ?? 50;
+
+    // Derive Target Company and Brand Name dynamically from detected declarations
+    const mfgText = (
+      result.declarations?.company_details?.manufacturer?.value ||
+      result.declarations?.consumer_care?.cell_name ||
+      comp.brandName ||
+      ""
+    ).toLowerCase();
+
+    let targetCompany = "parle_foods";
+    let brandName = "Parle Biscuits Pvt Ltd";
+
+    if (mfgText.includes("parle")) {
+      targetCompany = "parle_foods";
+      brandName = "Parle Biscuits Pvt Ltd";
+    } else if (mfgText.includes("cadbury") || mfgText.includes("mondelez")) {
+      targetCompany = "cadbury_mondelez";
+      brandName = "Mondelez India Foods Pvt Ltd";
+    } else if (mfgText.includes("amul") || mfgText.includes("gcmmf")) {
+      targetCompany = "amul_india";
+      brandName = "GCMMF Ltd (Amul)";
+    } else if (mfgText.includes("britannia")) {
+      targetCompany = "britannia_foods";
+      brandName = "Britannia Industries Ltd";
+    } else if (comp.companyId) {
+      targetCompany = comp.companyId;
+      brandName = comp.brandName || "Packaged Goods Producer";
+    } else {
+      const rawBrand = result.declarations?.company_details?.manufacturer?.value || comp.sampleName || "Packaged Goods Producer";
+      brandName = rawBrand;
+      targetCompany = rawBrand.toLowerCase().replace(/[^a-z0-9]/g, "_").slice(0, 20);
+    }
+
+    const prodName =
+      comp.sampleName ||
+      (selectedFile ? selectedFile.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ") : `${brandName} Packaging Sample`);
 
     // Increment flag counter
     const newCount = incrementProductFlagCounter(prodName);
@@ -323,19 +358,15 @@ export default function Home() {
     setIsCurrentUrgent(urgent);
 
     const severity: ViolationSeverity =
-      score < 50 || violations.some((v: string) => v.toLowerCase().includes("mrp") || v.toLowerCase().includes("quantity"))
+      score < 50 || violations.some((v: any) => typeof v === "string" && (v.toLowerCase().includes("mrp") || v.toLowerCase().includes("quantity")))
         ? "CRITICAL"
         : score < 75
         ? "MAJOR"
         : "MINOR";
 
-    const targetCompany =
-      comp.companyId ||
-      (result.declarations?.company_details?.manufacturer?.value?.toLowerCase().includes("amul") ? "amul_india" : "amul_india");
-
     const newNotice = dispatchNotice({
       product_name: prodName,
-      brand_name: comp.brandName || "Manufacturer",
+      brand_name: brandName,
       company_id: targetCompany,
       inspector_id: user?.user_id || "insp_rajesh",
       inspector_name: user?.name || "Rajesh Sharma",
@@ -345,22 +376,25 @@ export default function Home() {
         "Rule 6(1) - Legal Metrology (Packaged Commodities) Rules, 2011",
         "Section 36(1) - Legal Metrology Act, 2009",
       ],
-      violations_summary: violations,
+      violations_summary: Array.isArray(violations)
+        ? violations.map((v: any) => (typeof v === "string" ? v : v.title || v.message || "Declaration issue"))
+        : ["Statutory packaging review flag"],
       detected_declarations: {
-        mrp: result.declarations?.mrp?.value || "Not Detected",
-        net_quantity: result.declarations?.net_quantity?.value || "Illegible",
-        mfg_date: result.declarations?.dates?.manufacturing_date?.value,
-        consumer_care: result.declarations?.consumer_care?.phone || result.declarations?.consumer_care?.email,
+        mrp: result.declarations?.mrp?.value ? `₹ ${result.declarations.mrp.value}` : "Not Detected",
+        net_quantity: result.declarations?.net_quantity?.value ? `${result.declarations.net_quantity.value} ${result.declarations.net_quantity.unit || "g"}` : "Illegible",
+        mfg_date: result.declarations?.dates?.manufacturing_date?.value || result.declarations?.dates?.packing_date?.value,
+        consumer_care: result.declarations?.consumer_care?.phone || result.declarations?.consumer_care?.email || result.declarations?.consumer_care?.evidence,
+        manufacturer: result.declarations?.company_details?.manufacturer?.value,
       },
-      ocr_evidence_snippet: result.ocr?.text?.slice(0, 180) || "Scanned via MetraScan AI",
-      inspector_notes: inspectorRemarks,
+      ocr_evidence_snippet: result.ocr?.text?.slice(0, 220) || "Scanned via MetraScan AI",
+      inspector_notes: inspectorRemarks || "Inspection flag dispatched under Legal Metrology Rules, 2011.",
     });
 
     setNoticeDispatched(newNotice);
     showToast(
       urgent
         ? `🚨 URGENT NOTICE (${newNotice.case_number}) dispatched! Flag count reached ${newCount}.`
-        : `✓ Official ${severity} Notice (${newNotice.case_number}) dispatched to ${targetCompany}!`
+        : `✓ Official ${severity} Notice (${newNotice.case_number}) dispatched to ${brandName}!`
     );
   };
 
@@ -401,6 +435,17 @@ export default function Home() {
         badge_number: user?.badgeNumber || "LM-DEL-2041",
         flag_count: currentFlagCount,
         is_urgent: isCurrentUrgent,
+        download_time: new Date().toLocaleString("en-IN", {
+          timeZone: "Asia/Kolkata",
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: true,
+        }) + " IST",
+        download_timestamp: new Date().toISOString(),
         review: {
           reviewer_name: user?.name || "Inspector Rajesh Sharma",
           decision: score >= 85 ? "Statutory Adherence Verified" : "Non-Compliance Flagged",
@@ -892,10 +937,19 @@ export default function Home() {
                               </span>
                             </button>
 
-                            {!isCompliant && !isNonPackaging && (
+                            {!isNonPackaging && (
                               noticeDispatched ? (
-                                <div className="w-full sm:w-auto text-center rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800">
-                                  ✓ Notice {noticeDispatched.case_number} Dispatched!
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800">
+                                    ✓ Notice {noticeDispatched.case_number} Dispatched to {noticeDispatched.brand_name}!
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => setActiveTab("inbox")}
+                                    className="rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition shadow-2xs"
+                                  >
+                                    View in Docket Registry →
+                                  </button>
                                 </div>
                               ) : (
                                 <button

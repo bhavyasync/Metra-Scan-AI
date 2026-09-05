@@ -35,6 +35,8 @@ export default function InspectorInbox({ onNavigateScan }: InspectorInboxProps) 
         ? true
         : selectedFilter === "URGENT"
         ? n.is_urgent || n.flag_count > 5
+        : selectedFilter === "RESPONDED"
+        ? n.status === "COMPANY_RESPONDED"
         : n.severity === selectedFilter;
 
     const matchesSearch =
@@ -162,6 +164,7 @@ export default function InspectorInbox({ onNavigateScan }: InspectorInboxProps) 
         <div className="flex flex-wrap items-center gap-1.5">
           {[
             { id: "ALL", label: "All Cases" },
+            { id: "RESPONDED", label: `🔔 Company Responded (${respondedCount})` },
             { id: "URGENT", label: "🚨 Urgent (> 5x Flags)" },
             { id: "CRITICAL", label: "Critical" },
             { id: "MAJOR", label: "Major" },
@@ -173,7 +176,9 @@ export default function InspectorInbox({ onNavigateScan }: InspectorInboxProps) 
               onClick={() => setSelectedFilter(tab.id)}
               className={`rounded-xl px-3 py-1.5 text-xs font-bold transition-all ${
                 selectedFilter === tab.id
-                  ? tab.id === "URGENT"
+                  ? tab.id === "RESPONDED"
+                    ? "bg-emerald-600 text-white shadow-xs"
+                    : tab.id === "URGENT"
                     ? "bg-red-600 text-white shadow-xs animate-pulse"
                     : tab.id === "CRITICAL"
                     ? "bg-red-600 text-white shadow-xs"
@@ -214,12 +219,16 @@ export default function InspectorInbox({ onNavigateScan }: InspectorInboxProps) 
             const isUrgent = notice.is_urgent || notice.flag_count > 5;
             const isCritical = notice.severity === "CRITICAL";
             const isMajor = notice.severity === "MAJOR";
+            const hasResponded = notice.status === "COMPANY_RESPONDED";
+            const isResolved = notice.status === "RESOLVED";
 
             return (
               <div
                 key={notice.id}
                 className={`group rounded-2xl border p-4 transition-all bg-white shadow-2xs hover:shadow-xs ${
-                  isUrgent
+                  hasResponded
+                    ? "border-emerald-400 bg-emerald-50/25 ring-1 ring-emerald-300/60"
+                    : isUrgent
                     ? "border-red-300 bg-red-50/40"
                     : isCritical
                     ? "border-red-200"
@@ -232,7 +241,9 @@ export default function InspectorInbox({ onNavigateScan }: InspectorInboxProps) 
                   <div className="flex items-start gap-3">
                     <div
                       className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl font-bold text-sm ${
-                        isUrgent
+                        hasResponded
+                          ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/30"
+                          : isUrgent
                           ? "bg-red-600 text-white shadow-md shadow-red-600/30 animate-pulse"
                           : isCritical
                           ? "bg-red-100 text-red-800 border border-red-200"
@@ -241,7 +252,7 @@ export default function InspectorInbox({ onNavigateScan }: InspectorInboxProps) 
                           : "bg-amber-100 text-amber-800 border border-amber-200"
                       }`}
                     >
-                      {isUrgent ? "🚨" : isCritical ? "⚠️" : "ℹ️"}
+                      {hasResponded ? "💬" : isUrgent ? "🚨" : isCritical ? "⚠️" : "ℹ️"}
                     </div>
 
                     <div>
@@ -250,7 +261,13 @@ export default function InspectorInbox({ onNavigateScan }: InspectorInboxProps) 
                           {notice.case_number}
                         </span>
 
-                        {isUrgent && (
+                        {hasResponded && (
+                          <span className="rounded-full border border-emerald-300 bg-emerald-100 px-2.5 py-0.5 text-[9px] font-black uppercase text-emerald-800 animate-pulse">
+                            🔔 COMPANY RESPONDED — ACTION NEEDED
+                          </span>
+                        )}
+
+                        {isUrgent && !hasResponded && (
                           <span className="rounded-full border border-red-300 bg-red-100 px-2.5 py-0.5 text-[9px] font-black uppercase text-red-800 animate-pulse">
                             🚨 URGENT CASE (FLAGGED {notice.flag_count}x)
                           </span>
@@ -316,15 +333,19 @@ export default function InspectorInbox({ onNavigateScan }: InspectorInboxProps) 
                         setSelectedCase(notice);
                         setInspectorNotesInput(notice.inspector_notes || "");
                       }}
-                      className="rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2 text-xs font-bold text-slate-800 transition hover:bg-slate-100 hover:border-slate-400 shadow-2xs"
+                      className={`rounded-xl px-4 py-2 text-xs font-bold transition shadow-2xs ${
+                        hasResponded
+                          ? "bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-600/20 ring-2 ring-emerald-400/50"
+                          : "border border-slate-300 bg-slate-50 text-slate-800 hover:bg-slate-100 hover:border-slate-400"
+                      }`}
                     >
-                      Inspect Case File →
+                      {hasResponded ? "Review Company Response →" : "Inspect Case File →"}
                     </button>
 
-                    {notice.status === "COMPANY_RESPONDED" && (
+                    {hasResponded && (
                       <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-700">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-600"></span>
-                        Response Submitted
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-600 animate-ping"></span>
+                        Response Awaiting Sign-off
                       </span>
                     )}
                   </div>
@@ -335,7 +356,7 @@ export default function InspectorInbox({ onNavigateScan }: InspectorInboxProps) 
         )}
       </div>
 
-      {/* Case Details Modal */}
+      {/* Case Details Modal - Three Step Audit Timeline */}
       {selectedCase && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs">
           <div className="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl sm:p-8">
@@ -345,7 +366,7 @@ export default function InspectorInbox({ onNavigateScan }: InspectorInboxProps) 
                   Case Docket #{selectedCase.case_number}
                 </span>
                 <h3 className="mt-1 text-lg font-black text-slate-900">
-                  {selectedCase.product_name}
+                  {selectedCase.product_name} • <span className="text-slate-500 font-normal">{selectedCase.brand_name}</span>
                 </h3>
               </div>
               <button
@@ -357,114 +378,236 @@ export default function InspectorInbox({ onNavigateScan }: InspectorInboxProps) 
               </button>
             </div>
 
-            <div className="mt-5 space-y-4 text-xs">
-              {/* Severity & Flag Counter Bar */}
+            <div className="mt-5 space-y-5 text-xs">
+              {/* Summary KPIs */}
               <div className="grid grid-cols-3 gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3.5">
                 <div>
-                  <p className="text-[10px] font-bold uppercase text-slate-500">Severity</p>
-                  <p className="mt-0.5 font-bold text-orange-700">{selectedCase.severity}</p>
+                  <p className="text-[10px] font-bold uppercase text-slate-500">Severity Level</p>
+                  <p className="mt-0.5 font-bold text-orange-700">{selectedCase.severity} NOTICE</p>
                 </div>
                 <div>
-                  <p className="text-[10px] font-bold uppercase text-slate-500">Times Flagged</p>
-                  <p className={`mt-0.5 font-bold ${selectedCase.flag_count > 5 ? "text-red-700" : "text-slate-800"}`}>
-                    {selectedCase.flag_count}x {selectedCase.flag_count > 5 ? "(URGENT)" : ""}
+                  <p className="text-[10px] font-bold uppercase text-slate-500">Inspection Count</p>
+                  <p className={`mt-0.5 font-bold ${selectedCase.flag_count > 5 ? "text-red-700 font-black" : "text-slate-800"}`}>
+                    {selectedCase.flag_count}x Flagged {selectedCase.flag_count > 5 ? "(🚨 REPEAT OFFENDER)" : ""}
                   </p>
                 </div>
                 <div>
-                  <p className="text-[10px] font-bold uppercase text-slate-500">Notice Status</p>
-                  <p className="mt-0.5 font-bold text-slate-800">
-                    {selectedCase.status.replace("_", " ")}
+                  <p className="text-[10px] font-bold uppercase text-slate-500">Target Entity</p>
+                  <p className="mt-0.5 font-mono font-bold text-slate-800">
+                    {selectedCase.company_id}
                   </p>
                 </div>
               </div>
 
-              {selectedCase.flag_count > 5 && (
-                <div className="rounded-2xl border border-red-300 bg-red-50 p-3 text-red-900">
-                  <p className="font-bold">🚨 Urgent Case Alert (Repeat Offender)</p>
-                  <p className="text-[11px] mt-0.5 leading-relaxed">
-                    This packaged commodity has been flagged {selectedCase.flag_count} times. Immediate statutory rectification is required under Legal Metrology Rules, 2011.
+              {/* THREE-STEP AUDIT TIMELINE */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                    Two-Way Regulatory Communication & Audit Timeline
                   </p>
+                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-bold text-emerald-800">
+                    Real-Time Synced
+                  </span>
                 </div>
-              )}
 
-              {/* Legal Violations */}
-              <div>
-                <p className="font-bold text-slate-700 uppercase tracking-wider text-[10px]">
-                  Statutory Rule Infractions (Rules 2011)
-                </p>
-                <div className="mt-2 space-y-1.5">
-                  {selectedCase.rule_citations.map((r, i) => (
-                    <div key={i} className="rounded-xl border border-red-200 bg-red-50 p-2.5 text-red-900">
-                      ⚖️ {r}
+                <div className="relative pl-6 space-y-4 before:absolute before:left-2.5 before:top-3 before:bottom-3 before:w-0.5 before:bg-slate-200">
+                  {/* STEP 1: Inspector Notice Dispatched */}
+                  <div className="relative">
+                    <div className="absolute -left-6 top-0 flex h-5 w-5 items-center justify-center rounded-full bg-slate-800 text-[10px] font-bold text-white ring-4 ring-white shadow-xs">
+                      1
                     </div>
-                  ))}
-                </div>
-              </div>
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm">🛡️</span>
+                          <h5 className="font-bold text-xs text-slate-900">
+                            Notice Dispatched by Inspectorate
+                          </h5>
+                        </div>
+                        <span className="text-[10px] font-mono text-slate-500">
+                          {new Date(selectedCase.created_at).toLocaleString("en-IN")}
+                        </span>
+                      </div>
 
-              {/* OCR Evidence Snippet */}
-              <div>
-                <p className="font-bold text-slate-700 uppercase tracking-wider text-[10px]">
-                  Extracted OCR Evidence
-                </p>
-                <div className="mt-1.5 rounded-xl border border-slate-200 bg-slate-50 p-3 font-mono text-[11px] text-slate-800">
-                  {selectedCase.ocr_evidence_snippet}
-                </div>
-              </div>
+                      {/* Rule Infractions */}
+                      <div className="mt-2.5 space-y-1">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                          Detected Statutory Infractions (PCR 2011)
+                        </p>
+                        {selectedCase.rule_citations.map((r, i) => (
+                          <div key={i} className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-medium text-red-900">
+                            ⚖️ {r}
+                          </div>
+                        ))}
+                      </div>
 
-              {/* Company Response (if any) */}
-              {selectedCase.company_response ? (
-                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-emerald-800">🏢 Company Submission</span>
-                    <span className="text-[10px] text-slate-500">
-                      {new Date(selectedCase.company_response.responded_at).toLocaleString("en-IN")}
-                    </span>
+                      {/* OCR Evidence */}
+                      <div className="mt-2.5">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                          Extracted Packaging OCR Evidence
+                        </p>
+                        <div className="mt-1 rounded-lg border border-slate-200 bg-white p-2.5 font-mono text-[11px] text-slate-700 select-all">
+                          {selectedCase.ocr_evidence_snippet}
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <p className="mt-2 text-xs leading-relaxed text-slate-800">
-                    "{selectedCase.company_response.response_text}"
-                  </p>
-                  {selectedCase.company_response.proof_submitted && (
-                    <p className="mt-2 text-[10px] font-mono text-emerald-700">
-                      Proof Ref: {selectedCase.company_response.proof_submitted}
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <div className="rounded-2xl border border-orange-200 bg-orange-50 p-3 text-orange-900">
-                  ⏳ Awaiting response from company ({selectedCase.company_id}). Notice delivered.
-                </div>
-              )}
 
-              {/* Inspector Action & Notes */}
-              <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-600 mb-1">
-                  Enforcement Remarks & Directives (Printed in PDF Report):
-                </label>
-                <textarea
-                  value={inspectorNotesInput}
-                  onChange={(e) => setInspectorNotesInput(e.target.value)}
-                  rows={3}
-                  placeholder="Enter inspector directives, packaging rectification instructions, or inspection observations..."
-                  className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-xs text-slate-900 placeholder-slate-400 focus:border-emerald-600 focus:bg-white focus:outline-none"
-                />
-              </div>
+                  {/* STEP 2: Company Corrective Response */}
+                  <div className="relative">
+                    <div
+                      className={`absolute -left-6 top-0 flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white ring-4 ring-white shadow-xs ${
+                        selectedCase.company_response ? "bg-emerald-600" : "bg-amber-500"
+                      }`}
+                    >
+                      2
+                    </div>
+                    {selectedCase.company_response ? (
+                      <div className="rounded-2xl border border-emerald-300 bg-emerald-50/70 p-3.5 shadow-2xs">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm">🏢</span>
+                            <h5 className="font-bold text-xs text-emerald-900">
+                              Company Corrective Action & Proof Received
+                            </h5>
+                            <span className="rounded-full bg-emerald-200 px-2 py-0.5 text-[9px] font-extrabold text-emerald-800">
+                              SUBMITTED
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-mono text-emerald-700">
+                            {new Date(selectedCase.company_response.responded_at).toLocaleString("en-IN")}
+                          </span>
+                        </div>
 
-              {/* Action Buttons (Fines and hearings removed) */}
-              <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => handleUpdateStatus("RESOLVED")}
-                  className="flex-1 rounded-xl bg-emerald-600 py-2.5 text-xs font-bold text-white hover:bg-emerald-700 shadow-md shadow-emerald-600/20"
-                >
-                  ✓ Mark Corrected & Resolved
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleUpdateStatus("ESCALATED_URGENT")}
-                  className="flex-1 rounded-xl bg-red-600 py-2.5 text-xs font-bold text-white hover:bg-red-700 shadow-md shadow-red-600/20"
-                >
-                  🚨 Escalate as Urgent Case
-                </button>
+                        <div className="mt-2 rounded-xl bg-white/95 border border-emerald-200 p-3 text-xs leading-relaxed text-slate-800">
+                          "{selectedCase.company_response.response_text}"
+                        </div>
+
+                        {selectedCase.company_response.proof_submitted && (
+                          <div className="mt-2 flex items-center gap-2 text-[11px] text-emerald-800">
+                            <span>📎</span>
+                            <span className="font-semibold">Attached Rectification Reference:</span>
+                            <span className="font-mono font-bold bg-emerald-100 px-2 py-0.5 rounded border border-emerald-200">
+                              {selectedCase.company_response.proof_submitted}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="rounded-2xl border border-dashed border-amber-300 bg-amber-50/60 p-3.5">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm">⏳</span>
+                            <h5 className="font-bold text-xs text-amber-900">
+                              Awaiting Company Response
+                            </h5>
+                          </div>
+                          <span className="text-[10px] font-bold text-amber-700">PENDING</span>
+                        </div>
+                        <p className="mt-1.5 text-[11px] text-amber-800 leading-relaxed">
+                          Statutory notice delivered to manufacturer (<span className="font-mono font-bold">{selectedCase.company_id}</span>). Awaiting submission of packaging plate realignment proof and corrective batch timeline.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* STEP 3: Inspector Determination & Resolution */}
+                  <div className="relative">
+                    <div
+                      className={`absolute -left-6 top-0 flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white ring-4 ring-white shadow-xs ${
+                        selectedCase.status === "RESOLVED"
+                          ? "bg-emerald-600"
+                          : selectedCase.status === "ESCALATED_URGENT"
+                          ? "bg-red-600"
+                          : "bg-slate-400"
+                      }`}
+                    >
+                      3
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-2xs">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm">⚖️</span>
+                          <h5 className="font-bold text-xs text-slate-900">
+                            Inspector Verification & Final Determination
+                          </h5>
+                        </div>
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[9px] font-extrabold uppercase ${
+                            selectedCase.status === "RESOLVED"
+                              ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                              : selectedCase.status === "ESCALATED_URGENT"
+                              ? "bg-red-100 text-red-800 border border-red-200"
+                              : "bg-slate-100 text-slate-700"
+                          }`}
+                        >
+                          {selectedCase.status.replace("_", " ")}
+                        </span>
+                      </div>
+
+                      {selectedCase.status === "RESOLVED" ? (
+                        <div className="mt-2.5 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                          <div className="flex items-center gap-2 text-xs font-bold text-emerald-900">
+                            <span>✓</span> Docket Resolved & Rectification Approved
+                          </div>
+                          {selectedCase.inspector_notes && (
+                            <p className="mt-1 text-xs text-emerald-800">
+                              <strong>Inspector Directives:</strong> {selectedCase.inspector_notes}
+                            </p>
+                          )}
+                          <p className="mt-1.5 text-[10px] text-emerald-600">
+                            Package meets Legal Metrology Rules, 2011 compliance requirements following corrective proof submission.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="mt-2.5 space-y-2.5">
+                          {selectedCase.status === "ESCALATED_URGENT" && (
+                            <div className="rounded-xl border border-red-200 bg-red-50 p-2.5 text-red-900">
+                              <p className="font-bold text-xs">🚨 Case Escalated for Legal Enforcement</p>
+                              {selectedCase.inspector_notes && (
+                                <p className="mt-1 text-xs text-red-800">
+                                  <strong>Enforcement Remarks:</strong> {selectedCase.inspector_notes}
+                                </p>
+                              )}
+                            </div>
+                          )}
+
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-600 mb-1">
+                              Inspector Directives & Rectification Remarks:
+                            </label>
+                            <textarea
+                              value={inspectorNotesInput}
+                              onChange={(e) => setInspectorNotesInput(e.target.value)}
+                              rows={2}
+                              placeholder="Enter statutory directives, artwork cylinder verification notes, or packaging inspection instructions..."
+                              className="w-full rounded-xl border border-slate-300 bg-slate-50 p-2.5 text-xs text-slate-900 placeholder-slate-400 focus:border-emerald-600 focus:bg-white focus:outline-none"
+                            />
+                          </div>
+
+                          <div className="flex flex-wrap gap-2 pt-1 border-t border-slate-100">
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateStatus("RESOLVED")}
+                              className="flex-1 rounded-xl bg-emerald-600 py-2 text-xs font-bold text-white hover:bg-emerald-700 shadow-md shadow-emerald-600/20 transition flex items-center justify-center gap-1.5"
+                            >
+                              <span>✓</span>
+                              <span>Accept Rectification & Mark Resolved</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateStatus("ESCALATED_URGENT")}
+                              className="flex-1 rounded-xl bg-red-600 py-2 text-xs font-bold text-white hover:bg-red-700 shadow-md shadow-red-600/20 transition flex items-center justify-center gap-1.5"
+                            >
+                              <span>🚨</span>
+                              <span>Escalate as Urgent Case</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

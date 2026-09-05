@@ -1,6 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import {
+  fetchAllNotices,
+  dispatchNoticeAPI,
+  respondToNoticeAPI,
+  updateNoticeStatusAPI,
+} from "./api";
 
 export type ViolationSeverity = "CRITICAL" | "MAJOR" | "MINOR";
 
@@ -242,16 +248,41 @@ export function incrementProductFlagCounter(productName: string): number {
 export function useNoticesStore() {
   const [notices, setNotices] = useState<ComplianceNotice[]>(INITIAL_NOTICES);
 
+  const syncWithBackend = async () => {
+    try {
+      const backendNotices = await fetchAllNotices();
+      if (backendNotices && Array.isArray(backendNotices) && backendNotices.length > 0) {
+        const local = getStoredNotices();
+        const localMap = new Map(local.map((n) => [n.id, n]));
+        backendNotices.forEach((bn: any) => {
+          const existing = localMap.get(bn.id);
+          localMap.set(bn.id, { ...existing, ...bn });
+        });
+        const merged = Array.from(localMap.values()).sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+        saveStoredNotices(merged);
+        setNotices(merged);
+      }
+    } catch {
+      // Offline / fallback to local storage
+    }
+  };
+
   useEffect(() => {
     setNotices(getStoredNotices());
+    syncWithBackend();
 
     const handleUpdate = () => {
       setNotices(getStoredNotices());
     };
 
     window.addEventListener("metrascan_notices_updated", handleUpdate);
+    const interval = setInterval(syncWithBackend, 3000);
+
     return () => {
       window.removeEventListener("metrascan_notices_updated", handleUpdate);
+      clearInterval(interval);
     };
   }, []);
 
@@ -287,17 +318,22 @@ export function useNoticesStore() {
     const updated = [newNotice, ...notices];
     setNotices(updated);
     saveStoredNotices(updated);
+
+    // Asynchronously sync to backend REST API
+    dispatchNoticeAPI(newNotice).catch(() => {});
+
     return newNotice;
   };
 
   const respondToNotice = (noticeId: string, responseText: string, proofUrl?: string) => {
+    const now = new Date().toISOString();
     const updated = notices.map((n) => {
       if (n.id === noticeId) {
         return {
           ...n,
           status: "COMPANY_RESPONDED" as NoticeStatus,
           company_response: {
-            responded_at: new Date().toISOString(),
+            responded_at: now,
             response_text: responseText,
             proof_submitted: proofUrl,
           },
@@ -307,6 +343,9 @@ export function useNoticesStore() {
     });
     setNotices(updated);
     saveStoredNotices(updated);
+
+    // Asynchronously sync to backend REST API
+    respondToNoticeAPI(noticeId, responseText, proofUrl).catch(() => {});
   };
 
   const updateStatus = (noticeId: string, status: NoticeStatus, notes?: string) => {
@@ -322,6 +361,9 @@ export function useNoticesStore() {
     });
     setNotices(updated);
     saveStoredNotices(updated);
+
+    // Asynchronously sync to backend REST API
+    updateNoticeStatusAPI(noticeId, status, notes).catch(() => {});
   };
 
   return {

@@ -167,15 +167,17 @@ def get_inspector_notices(inspector_id: str):
 @router.get("/company/{company_id}")
 def get_company_notices(company_id: str):
     """Get all violation notices issued to a specific company."""
-    target = company_id.lower().replace("_", "").replace(" ", "")
+    if not company_id or company_id.lower() in ["all", "any"]:
+        return COMPLIANCE_NOTICES
+
+    target = company_id.lower().replace("_", "").replace(" ", "").replace("-", "")
     results = [
         n for n in COMPLIANCE_NOTICES 
-        if target in n.get("company_id", "").lower().replace("_", "") 
-        or target in n.get("brand_name", "").lower().replace(" ", "")
+        if target in n.get("company_id", "").lower().replace("_", "").replace("-", "") 
+        or target in n.get("brand_name", "").lower().replace(" ", "").replace("-", "")
+        or target in n.get("product_name", "").lower().replace(" ", "").replace("-", "")
     ]
-    if not results and "amul" in target:
-        results = [n for n in COMPLIANCE_NOTICES if "amul" in n.get("company_id", "").lower()]
-    return results or COMPLIANCE_NOTICES
+    return results
 
 
 @router.post("/dispatch")
@@ -185,16 +187,18 @@ def dispatch_notice(payload: Dict[str, Any] = Body(...)):
     severity = payload.get("severity", "MAJOR")
     days = 7 if severity == "CRITICAL" else (15 if severity == "MAJOR" else 30)
     deadline = now + timedelta(days=days)
-    case_num = f"LMN-2026-ACT-{uuid.uuid4().hex[:4].upper()}"
+    case_num = payload.get("case_number") or f"LMN-2026-ACT-{uuid.uuid4().hex[:4].upper()}"
 
     product_name = payload.get("product_name", "Packaged Commodity")
     key = product_name.lower().strip()
-    current_count = PRODUCT_FLAG_COUNTERS.get(key, 0) + 1
+    current_count = payload.get("flag_count") or (PRODUCT_FLAG_COUNTERS.get(key, 0) + 1)
     PRODUCT_FLAG_COUNTERS[key] = current_count
-    is_urgent = current_count > 5
+    is_urgent = payload.get("is_urgent", current_count > 5)
+
+    notice_id = payload.get("id") or f"notif-{uuid.uuid4().hex[:8]}"
 
     notice = {
-        "id": f"notif-{uuid.uuid4().hex[:8]}",
+        "id": notice_id,
         "case_number": case_num,
         "product_name": product_name,
         "brand_name": payload.get("brand_name", "Unknown Brand"),
@@ -202,10 +206,10 @@ def dispatch_notice(payload: Dict[str, Any] = Body(...)):
         "inspector_id": payload.get("inspector_id", "insp_rajesh"),
         "inspector_name": payload.get("inspector_name", "Rajesh Sharma"),
         "jurisdiction": payload.get("jurisdiction", "Delhi NCR Zone"),
-        "created_at": now.isoformat() + "Z",
-        "deadline_date": deadline.isoformat() + "Z",
+        "created_at": payload.get("created_at") or (now.isoformat() + "Z"),
+        "deadline_date": payload.get("deadline_date") or (deadline.isoformat() + "Z"),
         "severity": severity,
-        "status": "ESCALATED_URGENT" if is_urgent else "NOTICE_ISSUED",
+        "status": payload.get("status") or ("ESCALATED_URGENT" if is_urgent else "NOTICE_ISSUED"),
         "flag_count": current_count,
         "is_urgent": is_urgent,
         "rule_citations": payload.get("rule_citations", ["Legal Metrology (Packaged Commodities) Rules 2011"]),
@@ -216,7 +220,7 @@ def dispatch_notice(payload: Dict[str, Any] = Body(...)):
     }
 
     COMPLIANCE_NOTICES.insert(0, notice)
-    return {"status": "success", "notice": notice}
+    return {**notice, "status": notice["status"], "notice": notice}
 
 
 @router.post("/{notice_id}/respond")
@@ -230,7 +234,23 @@ def respond_to_notice(notice_id: str, payload: Dict[str, Any] = Body(...)):
                 "response_text": payload.get("response_text", "Correction submitted."),
                 "proof_submitted": payload.get("proof_submitted"),
             }
-            return {"status": "success", "notice": n}
+            return {**n, "status": "COMPANY_RESPONDED", "notice": n}
+    raise HTTPException(status_code=404, detail="Notice not found")
+
+
+@router.post("/{notice_id}/status")
+def update_notice_status(notice_id: str, payload: Dict[str, Any] = Body(...)):
+    """Inspector updates notice status (e.g. RESOLVED, ESCALATED_URGENT) with directives."""
+    status = payload.get("status")
+    notes = payload.get("notes")
+    for n in COMPLIANCE_NOTICES:
+        if n["id"] == notice_id:
+            if status:
+                n["status"] = status
+            if notes:
+                n["inspector_notes"] = notes
+            n["updated_at"] = datetime.utcnow().isoformat() + "Z"
+            return {**n, "status": n["status"], "notice": n}
     raise HTTPException(status_code=404, detail="Notice not found")
 
 
@@ -255,3 +275,13 @@ def get_notice_stats():
         "pending_count": pending,
         "national_compliance_rate": 78.4,
     }
+
+
+@router.get("/{notice_id}")
+def get_notice_by_id(notice_id: str):
+    """Retrieve a single compliance notice by notice ID or case number."""
+    for n in COMPLIANCE_NOTICES:
+        if n["id"] == notice_id or n.get("case_number") == notice_id:
+            return n
+    raise HTTPException(status_code=404, detail="Notice not found")
+

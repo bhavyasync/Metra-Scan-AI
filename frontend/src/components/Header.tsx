@@ -11,9 +11,10 @@ interface HeaderProps {
 }
 
 export default function Header({ onOpenInbox, onToggleMobileMenu }: HeaderProps) {
-  const { user, logout } = useAuth();
+  const { user, logout, switchRole } = useAuth();
   const { notices } = useNoticesStore();
   const [time, setTime] = useState("");
+  const [showRoleMenu, setShowRoleMenu] = useState(false);
 
   useEffect(() => {
     const updateTime = () => {
@@ -90,31 +91,134 @@ export default function Header({ onOpenInbox, onToggleMobileMenu }: HeaderProps)
 
       {/* RIGHT: User Profile & Secure Session */}
       <div className="flex items-center gap-2 sm:gap-3">
-        {/* Active Role Badge (Read-Only) */}
+        {/* Interactive Role Switcher Pill & Dropdown */}
         {user && (
-          <div
-            className={`hidden items-center gap-1.5 rounded-xl border px-3 py-1 text-xs font-semibold sm:flex ${
-              user.role === "inspector"
-                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                : user.role === "company"
-                ? "border-orange-200 bg-orange-50 text-orange-800"
-                : user.role === "admin"
-                ? "border-purple-200 bg-purple-50 text-purple-800"
-                : "border-cyan-200 bg-cyan-50 text-cyan-800"
-            }`}
-          >
-            <span className="text-sm">
-              {user.role === "inspector"
-                ? "🛡️"
-                : user.role === "company"
-                ? "🏢"
-                : user.role === "admin"
-                ? "🏛️"
-                : "👤"}
-            </span>
-            <span className="capitalize">
-              {user.role === "user" ? "Citizen" : user.role} Portal
-            </span>
+          <div className="relative">
+            {user.role === "inspector" ? (
+              <button
+                type="button"
+                onClick={() => setShowRoleMenu(!showRoleMenu)}
+                className="flex items-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-800 shadow-2xs hover:bg-emerald-100 transition active:scale-95"
+                title="Switch role or company profile"
+              >
+                <span className="text-sm">🛡️</span>
+                <span className="hidden sm:inline">Inspector Portal</span>
+                <span className="text-[10px] text-emerald-600 font-normal">⇄ Switch ▾</span>
+              </button>
+            ) : user.role === "company" ? (
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => switchRole("inspector")}
+                  className="flex items-center gap-1.5 rounded-xl border border-emerald-400 bg-emerald-600 px-2.5 py-1 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 transition active:scale-95"
+                  title="Switch to Inspector Enforcement Portal"
+                >
+                  <span>🛡️</span>
+                  <span className="hidden sm:inline">Switch to Inspector</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowRoleMenu(!showRoleMenu)}
+                  className="flex items-center gap-1 rounded-xl border border-orange-200 bg-orange-50 px-2 py-1 text-xs font-bold text-orange-800 hover:bg-orange-100 transition"
+                  title="Switch company account"
+                >
+                  <span>🏢</span>
+                  <span className="max-w-[70px] sm:max-w-[100px] truncate">{user.name.split(" ")[0]}</span>
+                  <span className="text-[10px]">▾</span>
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => switchRole("inspector")}
+                className="flex items-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-800 hover:bg-emerald-100"
+              >
+                <span>🛡️ Switch to Inspector</span>
+              </button>
+            )}
+
+            {/* Dropdown Menu Backdrop */}
+            {showRoleMenu && (
+              <div
+                className="fixed inset-0 z-40"
+                onClick={() => setShowRoleMenu(false)}
+              />
+            )}
+
+            {/* Dropdown Menu Card */}
+            {showRoleMenu && (
+              <div className="absolute right-0 top-full mt-2 w-64 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl z-50 animate-in fade-in zoom-in-95 duration-100">
+                <div className="px-3 py-1.5 border-b border-slate-100">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                    Switch Active Portal / Role
+                  </p>
+                </div>
+
+                <div className="mt-1 space-y-0.5">
+                  {/* Inspector Option */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      switchRole("inspector");
+                      setShowRoleMenu(false);
+                    }}
+                    className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs font-semibold transition ${
+                      user.role === "inspector"
+                        ? "bg-emerald-50 text-emerald-900 font-bold"
+                        : "text-slate-700 hover:bg-slate-100"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm">🛡️</span>
+                      <div>
+                        <p className="leading-tight">Inspector Portal</p>
+                        <p className="text-[10px] text-slate-500 font-normal">Legal Metrology Enforcement</p>
+                      </div>
+                    </div>
+                    {user.role === "inspector" && <span className="text-emerald-600 font-bold">✓</span>}
+                  </button>
+
+                  <div className="px-3 pt-2 pb-1 border-t border-slate-100">
+                    <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                      Company Portals (Manufacturer Inboxes)
+                    </p>
+                  </div>
+
+                  {[
+                    { id: "parle_foods", name: "Parle Biscuits Pvt Ltd", brand: "Parle-G / Hide & Seek" },
+                    { id: "amul_india", name: "GCMMF Ltd. (Amul)", brand: "Amul Butter / Dairy" },
+                    { id: "cadbury_mondelez", name: "Mondelez India (Cadbury)", brand: "Dairy Milk / 5 Star" },
+                    { id: "britannia_foods", name: "Britannia Industries Ltd", brand: "Good Day / Marie" },
+                  ].map((comp) => {
+                    const isCurrent = user.role === "company" && user.user_id === comp.id;
+                    return (
+                      <button
+                        key={comp.id}
+                        type="button"
+                        onClick={() => {
+                          switchRole("company", comp.id);
+                          setShowRoleMenu(false);
+                        }}
+                        className={`flex w-full items-center justify-between rounded-xl px-3 py-1.5 text-left text-xs transition ${
+                          isCurrent
+                            ? "bg-orange-50 text-orange-950 font-bold"
+                            : "text-slate-700 hover:bg-slate-100"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span>🏢</span>
+                          <div>
+                            <p className="font-semibold text-xs leading-tight">{comp.name}</p>
+                            <p className="text-[10px] text-slate-500">{comp.brand}</p>
+                          </div>
+                        </div>
+                        {isCurrent && <span className="text-orange-600 font-bold">✓</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

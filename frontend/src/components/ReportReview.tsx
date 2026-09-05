@@ -96,6 +96,21 @@ export default function ReportReview({
         declarations:
           result.declarations ?? {},
 
+        download_time:
+          new Date().toLocaleString("en-IN", {
+            timeZone: "Asia/Kolkata",
+            day: "2-digit",
+            month: "short",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            hour12: true,
+          }) + " IST",
+
+        download_timestamp:
+          new Date().toISOString(),
+
         review: {
           reviewer_name:
             reviewerName,

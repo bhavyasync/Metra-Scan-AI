@@ -548,7 +548,13 @@ def evaluate_font_size_rule(
 
 def normalize_date_stamp(val_str: str) -> str:
     val_str = val_str.strip()
-    # 1. Normalize month OCR glitch: e.g. 13/94/25 -> 13/04/25, 17/64/27 -> 17/04/27
+
+    # 0. Strip concatenated time digits or timestamp suffix: e.g. 2/11/26718:003 -> 2/11/26, 2/11/26 18:00
+    m_time_suffix = re.match(r"^(\d{1,2}[\/\-]\d{1,2}[\/\-]2\d)(?:[71]?\d{1,2}:\d{2}.*|\d{3,}.*|\s+\d{1,2}:\d{2}.*)?$", val_str)
+    if m_time_suffix:
+        val_str = m_time_suffix.group(1)
+
+    # 1. Normalize month OCR glitch: e.g. 13/94/25 -> 13/04/25, 17/64/27 -> 17/04/27, 13/84/25 -> 13/04/25
     m_month_glitch = re.match(r"^(\d{1,2})[\/\-](?:64|94|84)[\/\-](\d{1,4})$", val_str)
     if m_month_glitch:
         d, yr = m_month_glitch.group(1), m_month_glitch.group(2)
@@ -566,14 +572,33 @@ def normalize_date_stamp(val_str: str) -> str:
     if m_slash:
         return f"{m_slash.group(1)}/{m_slash.group(2)}/{m_slash.group(3)}"
 
-    # 4. Handle 1an2019 / Ian2019 / 41an2019
-    m_txt = re.search(r"(?:(\d{1,2})[\s\/\-.]*)?((?:[1IJLij]an|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*)[\s\/\-.]*(\d{2,4})", val_str, re.IGNORECASE)
+    # 4. Handle space-separated dates in faint dot-matrix print: e.g. 13 04 25 -> 13/04/25, 04 26 -> 04/26
+    m_sp3 = re.match(r"^(\d{1,2})\s+(\d{1,2})\s+(\d{2,4})$", val_str)
+    if m_sp3:
+        return f"{m_sp3.group(1)}/{m_sp3.group(2)}/{m_sp3.group(3)}"
+    m_sp2 = re.match(r"^(\d{1,2})\s+(\d{2,4})$", val_str)
+    if m_sp2 and 1 <= int(m_sp2.group(1)) <= 12:
+        return f"{m_sp2.group(1)}/{m_sp2.group(2)}"
+
+    # 5. Handle dot-separated 3-part date: 13.04.25 -> 13/04/25
+    m_dot3 = re.match(r"^(\d{1,2})\.(\d{1,2})\.(\d{2,4})$", val_str)
+    if m_dot3:
+        return f"{m_dot3.group(1)}/{m_dot3.group(2)}/{m_dot3.group(3)}"
+
+    # 6. Handle 1an2019 / Ian2019 / 41an2019 / Fe8 / 0ct
+    m_txt = re.search(r"(?:(\d{1,2})[\s\/\-.]*)?((?:[1IJLij]an|Fe[b8e]|Mar|Apr|May|[1IJLij]un|[1IJLij]ul|Au[g6]|Sep|Oct|[0O]ct|N[o0]v|Dec)[a-z]*)[\s\/\-.]*(\d{2,4})", val_str, re.IGNORECASE)
     if m_txt:
         d = m_txt.group(1) or ""
         mon = m_txt.group(2)
         yr = m_txt.group(3)
         if re.match(r"^[1IJLij]an", mon, re.IGNORECASE):
             mon = "Jan"
+        elif re.match(r"^fe[b8e]", mon, re.IGNORECASE):
+            mon = "Feb"
+        elif re.match(r"^[0o]ct", mon, re.IGNORECASE):
+            mon = "Oct"
+        elif re.match(r"^n[0o]v", mon, re.IGNORECASE):
+            mon = "Nov"
         else:
             mon = mon[:3].title()
         return f"{d} {mon} {yr}".strip()
@@ -680,6 +705,8 @@ MONTH_NAMES = r"(?:[1IJLij]an|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*
 
 DATE_REGEX = (
     r"("
+    r"\b\d{1,2}[\/\-]\d{1,2}[\/\-]2\d(?=[^\d\/\-]|\d{3,}|$)"
+    r"|"
     r"\b\d{1,2}[\/\-]\d{1,2}[\/\-]\d{1,4}\b"
     r"|"
     r"\b\d{1,2}\.\d{1,2}\.\d{2,4}\b"
@@ -757,9 +784,9 @@ def parse_date_to_comparable(d_str: Optional[str]) -> Optional[Tuple[int, int, i
             return None
     return None
 
-PKG_LABELS = r"(?:PKD|PKU|PKO|PID|PKA|PKL|PLD|PACKED|P\.?K\.?D\.?|PACKING\s*DATE|DATE\s*OF\s*(?:PACKAGING|PACKING)|PAC\b|PACK\b)"
-MFG_LABELS = r"(?:MFD|MFG|MFA|MFE|MLD|M\.?F\.?D\.?|M\.?F\.?G\.?|DATE\s*OF\s*(?:MANUFACTURE|MFG)|MANUFACTURED|MIG|DOM)"
-EXP_LABELS = r"(?:EXP|EXPIRY|EXPIRES|EXP\.?\s*DATE|USE\s*BY|USEBY|BEST\s*BEFORE|VALID\s*TILL|BB\b)"
+PKG_LABELS = r"(?:PKD|PKU|PKO|PID|PKA|PKL|PLD|PACKED|P\.?K\.?D\.?|PACKING\s*DATE|DATE\s*OF\s*(?:PACKAGING|PACKING)|PAC\b|PACK\b|PKG\b|PKGD\b)"
+MFG_LABELS = r"(?:MFD|MFG|MFA|MFE|MLD|M\.?F\.?D\.?|M\.?F\.?G\.?|DATE\s*OF\s*(?:MANUFACTURE|MFG)|MANUFACTURED|MIG|DOM|MFGD|MFG\s*DT|MFD\s*DT)"
+EXP_LABELS = r"(?:EXP|EXPIRY|EXPIRES|EXP\.?\s*DATE|USE\s*BY|USEBY|BEST\s*BEFORE|VALID\s*TILL|BB\b|UB\b|EXP\s*DT)"
 
 def find_dates(text: str, lines: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
     lines = prepare_lines(text, lines)
@@ -792,9 +819,9 @@ def find_dates(text: str, lines: Optional[List[Dict[str, Any]]] = None) -> Dict[
         if bb_date_m:
             best_before_result = detected(0.94, bb_date_m.group(0), value=normalize_date_stamp(bb_date_m.group(1).strip()))
 
-    # 2. Direct Manufacturing Date label
+    # 2. Direct Manufacturing Date label (supports MFD:12/24, MFD 12/24, MFD12/24)
     mfg_m = re.search(
-        r"\b" + MFG_LABELS + r"\b\s*[:\-./=]?\s*" + DATE_REGEX,
+        r"(?:^|[^\w])(?:" + MFG_LABELS + r")\.?[:\-./=\s]*" + DATE_REGEX,
         full_text,
         re.IGNORECASE,
     )
@@ -803,9 +830,9 @@ def find_dates(text: str, lines: Optional[List[Dict[str, Any]]] = None) -> Dict[
         if not is_non_date(raw_val, mfg_m.group(0)):
             mfg_result = detected(0.96, mfg_m.group(0), value=raw_val)
 
-    # 3. Direct Packing Date label
+    # 3. Direct Packing Date label (supports PKD:04/26, PKD 04/26, PKD04/26)
     pkg_m = re.search(
-        r"\b" + PKG_LABELS + r"\.?\s*[:\-./=]?\s*" + DATE_REGEX,
+        r"(?:^|[^\w])(?:" + PKG_LABELS + r")\.?[:\-./=\s]*" + DATE_REGEX,
         full_text,
         re.IGNORECASE,
     )
@@ -814,9 +841,9 @@ def find_dates(text: str, lines: Optional[List[Dict[str, Any]]] = None) -> Dict[
         if not is_non_date(raw_val, pkg_m.group(0)):
             pkg_result = detected(0.96, pkg_m.group(0), value=raw_val)
 
-    # 4. Direct Expiry / Use By Date label
+    # 4. Direct Expiry / Use By Date label (supports USE BY: 02/11/26, USEBY2/11/26)
     exp_m = re.search(
-        r"\b" + EXP_LABELS + r"\.?\s*[:\-./=]?\s*" + DATE_REGEX,
+        r"(?:^|[^\w])(?:" + EXP_LABELS + r")\.?[:\-./=\s]*" + DATE_REGEX,
         full_text,
         re.IGNORECASE,
     )
@@ -1029,40 +1056,44 @@ def find_consumer_care(text: str, lines: Optional[List[Dict[str, Any]]] = None) 
     full_text = " \n ".join(l["text"] for l in lines)
     clean_text = full_text.replace("（", "(").replace("）", ")")
 
-    # 1. Phone / Toll Free
+    # 1. Phone / Toll Free / Helplines
     phone = None
-    # 1a. 1800 Toll Free & Helplines (handles 1800-XXX-XXXX, 18002096929, 1802096929, PHONENO:1800...)
+    # 1a. 1800 & 1860 Toll Free & Helplines (handles 1800-XXX-XXXX, 1860-XXX-XXXX, 18002096929, 1802096929, PHONENO:1800...)
     tf_m = re.search(
-        r"(?:Toll\s*Free|Helpline|TolFreeNo\.?|Phone|Ph|Call|Contact|Customer\s*Care|Consumer\s*Care|Tel)[\s\w.:\-]*?(\b1800[-\s]?\d{2,4}[-\s]?\d{3,4}\b|\b180\d{7,8}\b|\b[6-9]\d{9}\b|\b0\d{2,4}[-\s]?\d{6,8}\b)",
+        r"(?:Toll\s*Free|Helpline|Help\s*Desk|TolFreeNo\.?|Phone|Ph|Call|Contact|Customer\s*Care|Consumer\s*Care|Consumer\s*Services|Consumer\s*Cell|Customer\s*Service|Queries|Feedback|Complaints|WhatsApp|WA|Tel)[\s\w.:\-]*?(\b18[06]0[-\s]?\d{2,4}[-\s]?\d{3,4}\b|\b18[06]\d{7,8}\b|\b[6-9]\d{4}[-\s]?\d{5}\b|\b0\d{2,4}[-\s]?\d{6,8}\b)",
         clean_text,
         re.IGNORECASE,
     )
     if tf_m:
         raw_p = tf_m.group(1).strip()
         digits = re.sub(r"\D", "", raw_p)
-        if len(digits) == 11 and digits.startswith("1800"):
+        if len(digits) == 11 and (digits.startswith("1800") or digits.startswith("1860")):
             phone = f"{digits[:4]}-{digits[4:7]}-{digits[7:]}"
         elif len(digits) == 10 and digits.startswith("180"):
             phone = f"1800-{digits[3:6]}-{digits[6:]}"
-        elif len(digits) == 10 and digits.startswith("18"):
-            phone = f"{digits[:4]}-{digits[4:7]}-{digits[7:]}"
+        elif len(digits) == 10 and digits.startswith("186"):
+            phone = f"1860-{digits[3:6]}-{digits[6:]}"
+        elif len(digits) == 10 and digits[0] in "6789":
+            phone = f"{digits[:5]}-{digits[5:]}"
         else:
             phone = raw_p
 
-    # 1b. Standalone Toll-Free Check
+    # 1b. Standalone Toll-Free / 1860 Check
     if not phone:
-        st_tf = re.search(r"\b(1800[-\s]?\d{2,4}[-\s]?\d{3,4}|180\d{7,8})\b", clean_text)
+        st_tf = re.search(r"\b(18[06]0[-\s]?\d{2,4}[-\s]?\d{3,4}|18[06]\d{7,8})\b", clean_text)
         if st_tf:
             raw_p = st_tf.group(1).strip()
             digits = re.sub(r"\D", "", raw_p)
-            if len(digits) == 11 and digits.startswith("1800"):
+            if len(digits) == 11 and (digits.startswith("1800") or digits.startswith("1860")):
                 phone = f"{digits[:4]}-{digits[4:7]}-{digits[7:]}"
             elif len(digits) == 10 and digits.startswith("180"):
                 phone = f"1800-{digits[3:6]}-{digits[6:]}"
+            elif len(digits) == 10 and digits.startswith("186"):
+                phone = f"1860-{digits[3:6]}-{digits[6:]}"
             else:
                 phone = raw_p
 
-    # 1c. Standard Landline with STD code (022, 011, 080, 033, 044, 079, etc.) or 10-digit Mobile
+    # 1c. Standard Landline with STD code or 10-digit Mobile
     if not phone:
         std_m = re.search(
             r"(?:Phone|Ph|Call|Tel|Helpline|Customer\s*Care|Contact)\s*(?:No\.?)?\s*[:\-.]?\s*(\+?91[\s-]*(?:0\d{2,4}|\(\d{2,4}\))[\s-]*\d{6,8}|\+?91[\s-]*[6-9]\d{4}[\s-]*\d{5})\b",
@@ -1079,14 +1110,16 @@ def find_consumer_care(text: str, lines: Optional[List[Dict[str, Any]]] = None) 
             if gen_p:
                 phone = gen_p.group(0).strip()
 
-    # 2. Email Address
+    # 2. Email Address (handles OCR glitches for @ such as (at), [at], ©, *, •)
     email = None
+    clean_email_text = re.sub(r"[\s©*•]+", " ", clean_text)
+    clean_email_text = clean_email_text.replace("(at)", "@").replace("[at]", "@").replace(" at ", "@")
     em_m = re.search(
-        r"([a-zA-Z0-9_.+-]+(?:\s*@\s*|\s*\(at\)\s*|\s*\[at\]\s*)[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)",
-        clean_text,
+        r"([a-zA-Z0-9_.+-]+(?:\s*@\s*)[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)",
+        clean_email_text,
     )
     if em_m:
-        raw_em = em_m.group(1).replace(" ", "").replace("(at)", "@").replace("[at]", "@").lower().rstrip(".,;")
+        raw_em = em_m.group(1).replace(" ", "").lower().rstrip(".,;")
         raw_em = re.sub(r"^(?:e-?ma(?:il)?s?|email|[a-z])[:\s-]*", "", raw_em, flags=re.IGNORECASE)
         if raw_em.startswith("macs@"):
             raw_em = "cs@" + raw_em.split("@")[-1]
@@ -1105,7 +1138,7 @@ def find_consumer_care(text: str, lines: Optional[List[Dict[str, Any]]] = None) 
             if "@" in cand_em and "." in cand_em.split("@")[-1]:
                 email = cand_em
 
-    # 3. Consumer Care Cell Name / Executive
+    # 3. Consumer Care Cell Name / Executive / Desk
     cell_name = None
     if re.search(r"(?:MER|ER)?CARE\s*CELL\s*:\s*P|CARECELL:P", clean_text, re.IGNORECASE):
         cell_name = "Parle Consumer Care Cell"
@@ -1123,6 +1156,8 @@ def find_consumer_care(text: str, lines: Optional[List[Dict[str, Any]]] = None) 
         cell_name = "Customer Service Cell"
     elif re.search(r"(?:Manager|Executive)\s*-\s*Consumer\s*Care", clean_text, re.IGNORECASE):
         cell_name = "Manager - Consumer Care"
+    elif re.search(r"(?:In\s*case\s*of\s*consumer\s*complaints|For\s*feedback\s*or\s*complaints|For\s*queries\s*and\s*feedback|product\s*quality.*retain|retain\s*the\s*pack)", clean_text, re.IGNORECASE):
+        cell_name = "Consumer Grievance Response Cell"
     elif re.search(r"(?:CONSUMER|CUSTOMER)\s*CARE\s*(?:CELL|EXECUTIVE|DESK|HELPLINE)\s*[:\-.]?\s*([^\n,;]{3,50})", clean_text, re.IGNORECASE):
         m_cell = re.search(r"(?:CONSUMER|CUSTOMER)\s*CARE\s*(?:CELL|EXECUTIVE|DESK|HELPLINE)\s*[:\-.]?\s*([^\n,;]{3,50})", clean_text, re.IGNORECASE)
         cell_name = clean(m_cell.group(1))
@@ -1133,6 +1168,10 @@ def find_consumer_care(text: str, lines: Optional[List[Dict[str, Any]]] = None) 
         address_ref = "Same as marketed by address"
     elif re.search(r"(?:at\s*the\s*manufacturer\'?s?\s*address|at\s*mfg\s*address|at\s*above\s*address)", clean_text, re.IGNORECASE):
         address_ref = "At manufacturer's address"
+    elif re.search(r"(?:One\s*Intematinal|International\s*Cent|Pae\s*Mumbai|Mumbai\s*-\s*0013|Mumbai\s*-\s*400013)", clean_text, re.IGNORECASE):
+        address_ref = "One International Center, Parel, Mumbai - 400013"
+    elif re.search(r"(?:retain\s*the\s*pack|the\s*product\s*quality)", clean_text, re.IGNORECASE):
+        address_ref = "Statutory Redressal: Retain packaging and contact registered address"
     elif re.search(r"P\.?O\.?\s*Box\s*(?:No\.?)?\s*\d+", clean_text, re.IGNORECASE):
         m_po = re.search(r"P\.?O\.?\s*Box\s*(?:No\.?)?\s*\d+", clean_text, re.IGNORECASE)
         address_ref = m_po.group(0).strip()

@@ -12,7 +12,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 import pytesseract
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 
 # ============================================================
 # TESSERACT CONFIGURATION
@@ -32,33 +32,43 @@ if tesseract_path:
 
 try:
     from rapidocr_onnxruntime import RapidOCR
-    rapid_engine = RapidOCR(use_cls=False, text_score=0.25)
+    rapid_engine = RapidOCR(use_cls=False, text_score=0.20)
     if hasattr(rapid_engine, "text_det"):
-        rapid_engine.text_det.limit_side_len = 1440
+        rapid_engine.text_det.limit_side_len = 1360
+    if hasattr(rapid_engine, "text_rec"):
+        rapid_engine.text_rec.rec_batch_num = 16
 except Exception as e:
     print(f"RapidOCR initialization notice: {e}")
     rapid_engine = None
 
 
 # ============================================================
-# PACKAGING IMAGE ENHANCEMENT
+# PACKAGING IMAGE ENHANCEMENT (LAB CLAHE FOR MICRO-TEXT)
 # ============================================================
 
 def prepare_packaging_image(image: np.ndarray) -> np.ndarray:
     """
-    Applies high-precision packaging scaling for micro-text:
-    - Optimal for DBNet detector: ~1440px max (sharp recognition of faint dot-matrix dates & care info)
-    - Interpolation via INTER_AREA when downscaling, INTER_CUBIC when upscaling
+    Applies high-precision packaging scaling and local contrast enhancement:
+    - Optimal for DBNet detector: ~1360px max (sharp recognition of faint dot-matrix dates & care info)
+    - LAB CLAHE enhances faint dot-matrix ink, low-contrast text on shiny foil/plastic wrappers
     """
     h, w = image.shape[:2]
     longest = max(h, w)
 
-    if longest > 1440:
-        scale = 1440 / longest
+    if longest > 1360:
+        scale = 1360 / longest
         image = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
-    elif longest < 1200:
-        scale = 1200 / longest
+    elif longest < 1100:
+        scale = 1100 / longest
         image = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+
+    # Local Contrast Enhancement (LAB CLAHE)
+    # Makes faint dot-matrix printing and unclear micro-text pop out with high gradient
+    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+    l, a, b = cv2.split(lab)
+    clahe = cv2.createCLAHE(clipLimit=1.8, tileGridSize=(8, 8))
+    l_enhanced = clahe.apply(l)
+    image = cv2.cvtColor(cv2.merge((l_enhanced, a, b)), cv2.COLOR_LAB2BGR)
 
     return image
 
@@ -244,36 +254,64 @@ def extract_text_with_data(image_path: str) -> Dict[str, Any]:
             "PVT", "EXP", "DATE", "FSSAI", "RS.", "RATE", "PRICE", "CARE", "BATCH"
         ]
 
+        def score_orientation(lines_list: List[Dict[str, Any]]) -> Tuple[int, int, int]:
+            meaningful = [l for l in lines_list if len(l.get("text", "").strip()) >= 3]
+            txt = " ".join(l["text"] for l in meaningful).upper()
+
+            cats = 0
+            if any(k in txt for k in ["MRP", "RS.", "PRICE", "RATE", "₹", "INCL"]):
+                cats += 1
+            if any(k in txt for k in ["PKD", "MFD", "MFG", "USE BY", "USEBY", "EXP", "BEST BEFORE", "DATE", "BATCH"]):
+                cats += 1
+            if any(k in txt for k in ["NET WT", "NET WEIGHT", "NET QTY", "NET QUANTITY", "100G", "GMS", "GM", "KG", "ML"]):
+                cats += 1
+            if any(k in txt for k in ["CONSUMER", "CARE", "PVT", "LTD", "HELPLINE", "FSSAI", "MANUFACTURED", "ORIGIN", "INDIA"]):
+                cats += 1
+
+            score = (cats * 25) + len(meaningful)
+            return score, cats, len(meaningful)
+
         # PASS 1: RapidOCR on 0° (Native view)
         rapid_0 = run_rapidocr_pass(img_enhanced)
-        txt_0 = " ".join(l["text"] for l in rapid_0).upper()
-        has_rich_0 = (len(rapid_0) >= 8 and any(k in txt_0 for k in PACKAGING_KEYWORDS)) or (len(rapid_0) >= 12)
+        score_0, cats_0, n_0 = score_orientation(rapid_0)
 
-        if has_rich_0 and len(rapid_0) >= 5:
+        # FAST EXIT: If native 0° is rich (>= 3 statutory categories and >= 12 lines, OR >= 25 lines)
+        if (cats_0 >= 3 and n_0 >= 12) or n_0 >= 25:
             for l in rapid_0:
                 add_line(l)
         else:
-            # Sweep remaining angles [270, 90, 180] adaptively for rotated mobile packaging photos
-            best_lines = rapid_0
-            best_score = len(rapid_0) + sum(3 for k in PACKAGING_KEYWORDS if k in txt_0)
+            # Check 270° (dominant mobile camera orientation for portrait shots)
+            rot270 = rotate_image(img_enhanced, 270)
+            rapid_270 = run_rapidocr_pass(rot270)
+            score_270, cats_270, n_270 = score_orientation(rapid_270)
 
-            for angle in [270, 90, 180]:
-                rot = rotate_image(img_enhanced, angle)
-                rapid_rot = run_rapidocr_pass(rot)
-                txt_rot = " ".join(l["text"] for l in rapid_rot).upper()
-                score = len(rapid_rot) + sum(3 for k in PACKAGING_KEYWORDS if k in txt_rot)
+            # Determine primary and secondary orientations
+            if score_270 >= score_0:
+                primary_lines = rapid_270
+                secondary_lines = rapid_0
+            else:
+                primary_lines = rapid_0
+                secondary_lines = rapid_270
 
-                if score > best_score:
-                    best_score = score
-                    best_lines = rapid_rot
-
-                # Fast exit if rich packaging declarations are found
-                if len(rapid_rot) >= 6 and any(k in txt_rot for k in ["MRP", "NET", "PKD", "MFD", "USE BY", "USEBY", "CARE", "LTD"]):
-                    best_lines = rapid_rot
-                    break
-
-            for l in best_lines:
+            # Add primary lines first
+            for l in primary_lines:
                 add_line(l)
+
+            # Also add any packaging declaration lines from secondary orientation
+            # so declarations printed across different axes are never missed
+            for l in secondary_lines:
+                t_up = l["text"].upper()
+                if any(k in t_up for k in ["MRP", "RS.", "₹", "NET", "PKD", "MFD", "MFG", "USE BY", "EXP", "CONSUMER", "1800"]):
+                    add_line(l)
+
+            # Check 90° only if neither 0° nor 270° found statutory content
+            if max(score_0, score_270) < 35:
+                rot90 = rotate_image(img_enhanced, 90)
+                rapid_90 = run_rapidocr_pass(rot90)
+                score_90, cats_90, n_90 = score_orientation(rapid_90)
+                if score_90 > max(score_0, score_270):
+                    for l in rapid_90:
+                        add_line(l)
 
         # If no lines were detected (e.g., blank or non-text picture)
         if not all_lines:

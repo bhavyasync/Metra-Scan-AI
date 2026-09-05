@@ -15,6 +15,45 @@ export interface UserProfile {
   fssaiNumber?: string;
 }
 
+export const COMPANY_ACCOUNTS: Record<string, UserProfile & { pass: string }> = {
+  parle_foods: {
+    user_id: "parle_foods",
+    pass: "parle123",
+    name: "Parle Biscuits Pvt Ltd",
+    role: "company",
+    email: "compliance@parle.biz",
+    entityName: "Parle Consumer & Packaging Cell",
+    fssaiNumber: "10012022000109",
+  },
+  amul_india: {
+    user_id: "amul_india",
+    pass: "comp123",
+    name: "Gujarat Milk Mktg Fed (Amul)",
+    role: "company",
+    email: "compliance@amul.coop",
+    entityName: "GCMMF Ltd. / Packaging Compliance",
+    fssaiNumber: "10012021000071",
+  },
+  cadbury_mondelez: {
+    user_id: "cadbury_mondelez",
+    pass: "cadbury123",
+    name: "Mondelez India Foods Pvt Ltd",
+    role: "company",
+    email: "compliance@mdlz.com",
+    entityName: "Cadbury / Mondelez Quality Affairs",
+    fssaiNumber: "10014022002711",
+  },
+  britannia_foods: {
+    user_id: "britannia_foods",
+    pass: "brit123",
+    name: "Britannia Industries Ltd",
+    role: "company",
+    email: "regulatory@britannia.com",
+    entityName: "Britannia Packaging Compliance",
+    fssaiNumber: "10015043001129",
+  },
+};
+
 export const DEMO_USERS: Record<UserRole, UserProfile & { pass: string }> = {
   inspector: {
     user_id: "insp_rajesh",
@@ -26,15 +65,7 @@ export const DEMO_USERS: Record<UserRole, UserProfile & { pass: string }> = {
     jurisdiction: "North Zone (Delhi NCR)",
     badgeNumber: "LM-DEL-2041",
   },
-  company: {
-    user_id: "amul_india",
-    pass: "comp123",
-    name: "Gujarat Milk Mktg Fed (Amul)",
-    role: "company",
-    email: "compliance@amul.coop",
-    entityName: "GCMMF Ltd. / Packaging & Labeling Compliance",
-    fssaiNumber: "10012021000071",
-  },
+  company: COMPANY_ACCOUNTS.parle_foods,
   admin: {
     user_id: "admin_delhi",
     pass: "admin123",
@@ -59,6 +90,7 @@ interface AuthContextType {
   login: (user_id: string, pass: string, role?: UserRole) => boolean;
   register: (profile: UserProfile, pass: string) => boolean;
   logout: () => void;
+  switchRole: (role: UserRole, companyId?: string) => void;
   isAuthenticated: boolean;
 }
 
@@ -148,6 +180,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return true;
   };
 
+  const switchRole = (role: UserRole, companyId?: string) => {
+    let targetProfile: UserProfile = DEMO_USERS.inspector;
+
+    if (role === "inspector") {
+      targetProfile = DEMO_USERS.inspector;
+    } else if (role === "company") {
+      targetProfile = (companyId && COMPANY_ACCOUNTS[companyId]) || COMPANY_ACCOUNTS.parle_foods || DEMO_USERS.company;
+    } else if (role === "admin") {
+      targetProfile = DEMO_USERS.admin;
+    } else {
+      targetProfile = DEMO_USERS.user;
+    }
+
+    setUser(targetProfile);
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(targetProfile));
+      window.dispatchEvent(new Event("metrascan_auth_changed"));
+    } catch {}
+  };
+
   const logout = () => {
     setUser(null);
     try {
@@ -162,6 +214,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         login,
         register,
         logout,
+        switchRole,
         isAuthenticated: !!user,
       }}
     >

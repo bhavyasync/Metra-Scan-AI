@@ -116,11 +116,26 @@ export async function generatePDFReport(
   const formData = new FormData();
   formData.append("file", optimizedFile);
 
+  const enrichedReportData = {
+    ...reportData,
+    download_time:
+      reportData.download_time ||
+      new Date().toLocaleString("en-IN", {
+        timeZone: "Asia/Kolkata",
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: true,
+      }) + " IST",
+    download_timestamp: reportData.download_timestamp || new Date().toISOString(),
+  };
+
   formData.append(
     "report_data",
-    JSON.stringify(
-      reportData
-    )
+    JSON.stringify(enrichedReportData)
   );
 
   const response =
@@ -181,6 +196,45 @@ export async function dispatchNoticeAPI(noticeData: any) {
     if (res.ok) return await res.json();
   } catch (e) {
     console.warn("Backend dispatch failed, using client store:", e);
+  }
+  return null;
+}
+
+export async function respondToNoticeAPI(
+  noticeId: string,
+  responseText: string,
+  proofSubmitted?: string
+) {
+  try {
+    const res = await fetch(`${getApiUrl()}/api/notices/${noticeId}/respond`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        response_text: responseText,
+        proof_submitted: proofSubmitted,
+      }),
+    });
+    if (res.ok) return await res.json();
+  } catch (e) {
+    console.warn("Backend notice response failed, using client store:", e);
+  }
+  return null;
+}
+
+export async function updateNoticeStatusAPI(
+  noticeId: string,
+  status: string,
+  notes?: string
+) {
+  try {
+    const res = await fetch(`${getApiUrl()}/api/notices/${noticeId}/status`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status, notes }),
+    });
+    if (res.ok) return await res.json();
+  } catch (e) {
+    console.warn("Backend notice status update failed, using client store:", e);
   }
   return null;
 }
